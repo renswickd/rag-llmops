@@ -1,0 +1,11 @@
+fastapi
+langchain
+langchain_core
+langchain-groq
+python-dotenv
+streamlit
+uvicorn
+langgraph
+langchain-openai
+structlog
+pytest
