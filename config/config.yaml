@@ -1,0 +1,11 @@
+app:
+  name: rag-llmops
+  environment: dev
+
+logging:
+  level: INFO
+  log_dir: logs
+  file_enabled: true
+  console_enabled: true
+  file_name_prefix: app
+  json: true
