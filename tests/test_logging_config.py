@@ -1,7 +1,5 @@
 import logging
-
-from src.core.logging_config import setup_logging, get_logger
-
+from core.logging_config import setup_logging, get_logger
 
 def test_setup_logging_adds_handlers():
     config = {

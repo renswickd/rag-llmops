@@ -2,7 +2,7 @@ from pathlib import Path
 import yaml
 import pytest
 
-from src.core.config import load_config
+from core.config import load_config
 
 
 def test_load_config_from_explicit_path(tmp_path):
