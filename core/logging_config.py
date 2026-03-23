@@ -22,7 +22,8 @@ def setup_logging(config: dict | None = None) -> None:
         return
 
     if config is None:
-        config = load_config()
+        # _build_log_file_path("logs", "app")
+        config = load_config(os.getenv("CONFIG_PATH"))
 
     logging_cfg = config.get("logging", {})
     log_level = logging_cfg.get("level", "INFO").upper()
