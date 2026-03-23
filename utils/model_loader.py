@@ -1,6 +1,4 @@
 import os
-import sys
-import json
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from core.config import load_config
@@ -55,15 +53,7 @@ class ModelLoader:
 
 if __name__ == "__main__":
     loader = ModelLoader()
-
-    # Test Embedding
-    embeddings = loader.load_embeddings()
-    print(f"Embedding Model Loaded: {embeddings}")
-    result = embeddings.embed_query("Hello, how are you?")
-    print(f"Embedding Result: {result}")
-
-    # Test LLM
+    
     llm = loader.load_llm()
-    print(f"LLM Loaded: {llm}")
     result = llm.invoke("Hello, how are you?")
     print(f"LLM Result: {result.content}")
