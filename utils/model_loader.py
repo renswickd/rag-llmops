@@ -30,7 +30,7 @@ class ModelLoader:
 
         if provider_key not in llm_block:
             log.error("LLM provider not found in config", provider=provider_key)
-            raise ValueError(f"LLM provider '{provider_key}' not found in config")
+            raise RagAssistantException(f"LLM provider '{provider_key}' not found in config")
 
         llm_config = llm_block[provider_key]
         provider = llm_config.get("provider")
@@ -50,7 +50,7 @@ class ModelLoader:
 
         else:
             log.error("Unsupported LLM provider", provider=provider)
-            raise ValueError(f"Unsupported LLM provider: {provider}")
+            raise RagAssistantException(f"Unsupported LLM provider: {provider}")
 
 
 if __name__ == "__main__":

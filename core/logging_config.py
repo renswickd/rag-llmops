@@ -4,10 +4,12 @@ from datetime import datetime
 from pathlib import Path
 import structlog
 from core.config import load_config
+from dotenv import load_dotenv
 
 
 _LOGGING_INITIALIZED = False
 
+load_dotenv()
 
 def _build_log_file_path(log_dir: str, prefix: str = "app") -> str:
     Path(log_dir).mkdir(parents=True, exist_ok=True)
