@@ -1,28 +1,27 @@
 import sys
 import traceback
-from typing import Optional, cast
+from typing import Optional
+
 
 class RagAssistantException(Exception):
     def __init__(self, error_message, error_details: Optional[object] = None):
-
-        if isinstance(error_message, BaseException):
-            norm_msg = str(error_message)
-        else:
-            norm_msg = str(error_message)
+        norm_msg = str(error_message)
 
         exc_type = exc_value = exc_tb = None
+
         if error_details is None:
             exc_type, exc_value, exc_tb = sys.exc_info()
+        elif hasattr(error_details, "exc_info"):
+            exc_type, exc_value, exc_tb = error_details.exc_info()
+        elif isinstance(error_details, BaseException):
+            exc_type, exc_value, exc_tb = (
+                type(error_details),
+                error_details,
+                error_details.__traceback__,
+            )
         else:
-            if hasattr(error_details, "exc_info"): 
-                exc_info_obj = cast(sys, error_details)
-                exc_type, exc_value, exc_tb = exc_info_obj.exc_info()
-            elif isinstance(error_details, BaseException):
-                exc_type, exc_value, exc_tb = type(error_details), error_details, error_details.__traceback__
-            else:
-                exc_type, exc_value, exc_tb = sys.exc_info()
+            exc_type, exc_value, exc_tb = sys.exc_info()
 
-        # Walk to the last frame to report the most relevant location
         last_tb = exc_tb
         while last_tb and last_tb.tb_next:
             last_tb = last_tb.tb_next
@@ -31,9 +30,8 @@ class RagAssistantException(Exception):
         self.lineno = last_tb.tb_lineno if last_tb else -1
         self.error_message = norm_msg
 
-        # Full pretty traceback (if available)
         if exc_type and exc_tb:
-            self.traceback_str = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            self.traceback_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         else:
             self.traceback_str = ""
 
@@ -46,4 +44,7 @@ class RagAssistantException(Exception):
         return base
 
     def __repr__(self):
-        return f"RagAssistantException(file={self.file_name!r}, line={self.lineno}, message={self.error_message!r})"
+        return (
+            f"RagAssistantException(file={self.file_name!r}, "
+            f"line={self.lineno}, message={self.error_message!r})"
+        )
