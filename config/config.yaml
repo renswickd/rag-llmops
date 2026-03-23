@@ -9,3 +9,10 @@ logging:
   console_enabled: true
   file_name_prefix: app
   json: true
+
+llm:
+  groq:
+    provider: "groq"
+    model_name: "openai/gpt-oss-20b"
+    temperature: 0
+    max_output_tokens: 2048
