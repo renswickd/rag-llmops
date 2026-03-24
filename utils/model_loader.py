@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
+
 from core.config import load_config
 from core.logging_config import get_logger
 from core.exceptions import RagAssistantException
@@ -49,6 +51,39 @@ class ModelLoader:
         else:
             log.error("Unsupported LLM provider", provider=provider)
             raise RagAssistantException(f"Unsupported LLM provider: {provider}")
+        
+    def load_embeddings(self):
+        """
+        Load and return Hugging Face embeddings using Google's EmbeddingGemma model.
+        """
+        embedding_cfg = self.config.get("embedding_model")
+        if not embedding_cfg:
+            log.error("Missing embedding_model block in config")
+            raise RagAssistantException("Missing 'embedding_model' configuration block")
+
+        model_name = embedding_cfg.get("model_name", "google/embeddinggemma-300m")
+        device = embedding_cfg.get("device", "cpu")
+        normalize = embedding_cfg.get("normalize_embeddings", True)
+        hf_token = os.getenv("HF_TOKEN")
+
+        log.info("Loading embedding model", model=model_name, device=device, normalize_embeddings=normalize)
+
+        try:
+            return HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={
+                    "device": device,
+                    "token": hf_token,
+                    "trust_remote_code": True,
+                },
+                encode_kwargs={
+                    "normalize_embeddings": normalize,
+                },
+            )
+        except Exception as e:
+            log.error("Error loading embedding model", error=str(e), model=model_name)
+            raise RagAssistantException("Failed to load embedding model", e) from e
+
 
 
 if __name__ == "__main__":

@@ -7,5 +7,7 @@ streamlit
 uvicorn
 langgraph
 langchain-openai
+langchain-huggingface
+sentence-transformers
 structlog
 pytest

@@ -156,3 +156,110 @@ def test_load_llm_raises_for_unsupported_provider(getenv_mock, load_dotenv_mock,
 
     with pytest.raises(RagAssistantException, match="Unsupported LLM provider: unsupported_vendor"):
         loader.load_llm()
+
+@patch("utils.model_loader.HuggingFaceEmbeddings")
+@patch("utils.model_loader.load_config")
+@patch("utils.model_loader.load_dotenv")
+@patch("utils.model_loader.os.getenv")
+def test_load_embeddings_success(getenv_mock, load_dotenv_mock, load_config_mock, hf_embeddings_mock):
+    def getenv_side_effect(key, default=None):
+        values = {
+            "CONFIG_PATH": "config/config.yaml",
+            "HF_TOKEN": "fake-hf-token",
+        }
+        return values.get(key, default)
+
+    getenv_mock.side_effect = getenv_side_effect
+    load_config_mock.return_value = {
+        "llm": {
+            "groq": {
+                "provider": "groq",
+                "model_name": "llama-3.1-8b-instant",
+            }
+        },
+        "embedding_model": {
+            "model_name": "google/embeddinggemma-300m",
+            "device": "cpu",
+            "normalize_embeddings": True,
+        },
+    }
+
+    fake_embeddings = MagicMock()
+    hf_embeddings_mock.return_value = fake_embeddings
+
+    loader = ModelLoader()
+    embeddings = loader.load_embeddings()
+
+    hf_embeddings_mock.assert_called_once_with(
+        model_name="google/embeddinggemma-300m",
+        model_kwargs={
+            "device": "cpu",
+            "token": "fake-hf-token",
+            "trust_remote_code": True,
+        },
+        encode_kwargs={
+            "normalize_embeddings": True,
+        },
+    )
+    assert embeddings == fake_embeddings
+
+
+@patch("utils.model_loader.load_config")
+@patch("utils.model_loader.load_dotenv")
+@patch("utils.model_loader.os.getenv")
+def test_load_embeddings_raises_when_embedding_block_missing(getenv_mock, load_dotenv_mock, load_config_mock):
+    def getenv_side_effect(key, default=None):
+        values = {
+            "CONFIG_PATH": "config/config.yaml",
+        }
+        return values.get(key, default)
+
+    getenv_mock.side_effect = getenv_side_effect
+    load_config_mock.return_value = {
+        "llm": {
+            "groq": {
+                "provider": "groq",
+                "model_name": "llama-3.1-8b-instant",
+            }
+        }
+    }
+
+    loader = ModelLoader()
+
+    with pytest.raises(RagAssistantException, match="Missing 'embedding_model' configuration block"):
+        loader.load_embeddings()
+
+
+@patch("utils.model_loader.HuggingFaceEmbeddings")
+@patch("utils.model_loader.load_config")
+@patch("utils.model_loader.load_dotenv")
+@patch("utils.model_loader.os.getenv")
+def test_load_embeddings_wraps_underlying_failure(getenv_mock, load_dotenv_mock, load_config_mock, hf_embeddings_mock):
+    def getenv_side_effect(key, default=None):
+        values = {
+            "CONFIG_PATH": "config/config.yaml",
+            "HF_TOKEN": "fake-hf-token",
+        }
+        return values.get(key, default)
+
+    getenv_mock.side_effect = getenv_side_effect
+    load_config_mock.return_value = {
+        "llm": {
+            "groq": {
+                "provider": "groq",
+                "model_name": "llama-3.1-8b-instant",
+            }
+        },
+        "embedding_model": {
+            "model_name": "google/embeddinggemma-300m",
+            "device": "cpu",
+            "normalize_embeddings": True,
+        },
+    }
+
+    hf_embeddings_mock.side_effect = RuntimeError("model init failed")
+
+    loader = ModelLoader()
+
+    with pytest.raises(RagAssistantException, match="Failed to load embedding model"):
+        loader.load_embeddings()
