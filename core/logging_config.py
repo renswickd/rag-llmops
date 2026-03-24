@@ -4,10 +4,12 @@ from datetime import datetime
 from pathlib import Path
 import structlog
 from core.config import load_config
+from dotenv import load_dotenv
 
 
 _LOGGING_INITIALIZED = False
 
+load_dotenv()
 
 def _build_log_file_path(log_dir: str, prefix: str = "app") -> str:
     Path(log_dir).mkdir(parents=True, exist_ok=True)
@@ -22,7 +24,8 @@ def setup_logging(config: dict | None = None) -> None:
         return
 
     if config is None:
-        config = load_config()
+        # _build_log_file_path("logs", "app")
+        config = load_config(os.getenv("CONFIG_PATH"))
 
     logging_cfg = config.get("logging", {})
     log_level = logging_cfg.get("level", "INFO").upper()
