@@ -67,11 +67,11 @@ class DocHandler:
             else:
                 raise ValueError("Unsupported uploaded_file type")
 
-            log.info("PDF saved successfully", file=filename, save_path=save_path, session_id=self.session_id)
+            log.info("Input files saved successfully", file=filename, save_path=save_path, session_id=self.session_id)
             return save_path
         except Exception as e:
-            log.error("Failed to save PDF", error=str(e), session_id=self.session_id)
-            raise RagAssistantException(f"Failed to save PDF: {str(e)}", e) from e
+            log.error("Failed to save input files", error=str(e), session_id=self.session_id)
+            raise RagAssistantException(f"Failed to save input files: {str(e)}", e) from e
 
     def read_pdf(self, pdf_path: str) -> str:
         try:
@@ -81,11 +81,11 @@ class DocHandler:
                     page = doc.load_page(page_num)
                     text_chunks.append(f"\n--- Page {page_num + 1} ---\n{page.get_text()}") 
             text = "\n".join(text_chunks)
-            log.info("Input read successfully", pdf_path=pdf_path, session_id=self.session_id, pages=len(text_chunks))
+            log.info(f"Input read successfully with total pages{len(text_chunks)}", pdf_path=pdf_path, session_id=self.session_id, pages=len(text_chunks))
             return text
         except Exception as e:
             log.error("Failed to read input", error=str(e), pdf_path=pdf_path, session_id=self.session_id)
-            raise RagAssistantException(f"Could not process PDF: {pdf_path}", e) from e
+            raise RagAssistantException(f"Could not process input files: {pdf_path}", e) from e
 
 if __name__ == "__main__":
     # Example usage
