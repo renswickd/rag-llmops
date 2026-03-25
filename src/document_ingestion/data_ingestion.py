@@ -11,7 +11,7 @@ log = get_logger(__name__)
 
 class DocHandler:
     """
-    PDF save + read (page-wise) for analysis.
+    PDF archive + read (page-wise) for analysis.
     """
     def __init__(self, data_dir: Optional[str] = None, session_id: Optional[str] = None):
         load_dotenv()
@@ -30,7 +30,7 @@ class DocHandler:
         os.makedirs(self.session_path, exist_ok=True)
         log.info("DocHandler initialized", session_id=self.session_id, session_path=self.session_path)
         
-    def save_pdf(self, uploaded_file) -> str:
+    def archive_pdf(self, uploaded_file) -> str:
         try:
             # Determine filename from common attributes
             if hasattr(uploaded_file, "filename") and getattr(uploaded_file, "filename"):
