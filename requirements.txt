@@ -11,3 +11,4 @@ langchain-huggingface
 sentence-transformers
 structlog
 pytest
+PyMuPDF

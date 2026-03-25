@@ -1,4 +1,5 @@
 import os
+import fitz  # PyMuPDF
 from dotenv import load_dotenv
 from typing import Optional
 from core.config import load_config
@@ -56,13 +57,6 @@ class DocHandler:
                 buf = uploaded_file.getbuffer()
                 with open(save_path, "wb") as f:
                     f.write(buf)
-            elif hasattr(uploaded_file, "read"):
-                # file-like object (Flask/Django upload, open file, etc.)
-                data = uploaded_file.read()
-                if isinstance(data, str):
-                    data = data.encode()
-                with open(save_path, "wb") as f:
-                    f.write(data)
             elif hasattr(uploaded_file, "stream"):
                 # werkzeug FileStorage or similar
                 data = uploaded_file.stream.read()
@@ -78,6 +72,20 @@ class DocHandler:
         except Exception as e:
             log.error("Failed to save PDF", error=str(e), session_id=self.session_id)
             raise RagAssistantException(f"Failed to save PDF: {str(e)}", e) from e
+
+    def read_pdf(self, pdf_path: str) -> str:
+        try:
+            text_chunks = []
+            with fitz.open(pdf_path) as doc:
+                for page_num in range(doc.page_count):
+                    page = doc.load_page(page_num)
+                    text_chunks.append(f"\n--- Page {page_num + 1} ---\n{page.get_text()}") 
+            text = "\n".join(text_chunks)
+            log.info("Input read successfully", pdf_path=pdf_path, session_id=self.session_id, pages=len(text_chunks))
+            return text
+        except Exception as e:
+            log.error("Failed to read input", error=str(e), pdf_path=pdf_path, session_id=self.session_id)
+            raise RagAssistantException(f"Could not process PDF: {pdf_path}", e) from e
 
 if __name__ == "__main__":
     # Example usage

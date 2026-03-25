@@ -24,5 +24,8 @@ if __name__ == "__main__":
     from src.document_ingestion.data_ingestion import DocHandler
     handler = DocHandler()
     print(f"DocHandler session path: {handler.session_path}")
+
     saved_path = handler.save_pdf("data/data_analysis/sample-doc-for-rag.pdf")
     print(f"PDF saved at: {saved_path}")
+    text = handler.read_pdf(saved_path)
+    print(f"Extracted text length: {len(text)}")
