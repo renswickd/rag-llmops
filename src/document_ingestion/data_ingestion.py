@@ -95,3 +95,16 @@ class DataIngestion:
         except Exception as e:
             self.log.error("Failed during document chunking", error=str(e))
             raise RagAssistantException("Failed to chunk documents", e) from e
+        
+    def ingest(self) -> int:
+        try:
+            raw_docs = self.load_documents()
+            chunked_docs = self.chunk_documents(raw_docs)
+
+            self.faiss_manager.load_or_create(chunked_docs)
+            self.log.info("Data ingestion completed successfully", total_chunks=len(chunked_docs))
+            return len(chunked_docs)
+
+        except Exception as e:
+            self.log.error("Data ingestion failed", error=str(e))
+            raise RagAssistantException("Data ingestion failed", e) from e
