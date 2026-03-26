@@ -76,3 +76,22 @@ class DataIngestion:
         except Exception as e:
             self.log.error("Failed during document loading", error=str(e))
             raise RagAssistantException("Failed to load documents", e) from e
+
+    def chunk_documents(self, docs: List[Document]) -> List[Document]:
+        try:
+            if not docs:
+                raise RagAssistantException("No documents available for chunking")
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap,
+            )
+
+            chunked_docs = splitter.split_documents(docs)
+
+            self.log.info("Documents chunked successfully",original_docs=len(docs), chunked_docs=len(chunked_docs), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap,)
+            return chunked_docs
+
+        except Exception as e:
+            self.log.error("Failed during document chunking", error=str(e))
+            raise RagAssistantException("Failed to chunk documents", e) from e
