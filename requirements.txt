@@ -12,3 +12,5 @@ sentence-transformers
 structlog
 pytest
 PyMuPDF
+langchain-text-splitters
+langchain-community

@@ -21,7 +21,7 @@ if __name__ == "__main__":
     # Test DocHandler
     # -----------------------------
     
-    from src.document_ingestion.data_ingestion import DocHandler
+    from src.document_ingestion.load_data import DocHandler
     handler = DocHandler()
     print(f"DocHandler session path: {handler.session_path}")
 

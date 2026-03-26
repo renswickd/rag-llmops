@@ -15,10 +15,10 @@ class DocHandler:
     """
     def __init__(self, data_dir: Optional[str] = None, session_id: Optional[str] = None):
         load_dotenv()
-        log.info("Environment variables loaded from .env file - in data_ingestion.py")
+        log.info("Environment variables loaded from .env file - in load_data.py")
 
         self.config = load_config(os.getenv("CONFIG_PATH"))
-        log.info("YAML config loaded - in data_ingestion.py", config_keys=list(self.config.keys()))
+        log.info("YAML config loaded - in load_data.py", config_keys=list(self.config.keys()))
         
         self.data_dir = data_dir
         if not self.data_dir:
