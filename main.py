@@ -37,14 +37,14 @@ if __name__ == "__main__":
     from src.document_ingestion.data_ingestion import DataIngestion
 
 
-    def main():
-        faiss_manager = FaissManager(index_dir="faiss_index")
-        ingestion = DataIngestion(
-            data_dir="data",
-            faiss_manager=faiss_manager,
-            chunk_size=1000,
-            chunk_overlap=200,
-        )
+    faiss_manager = FaissManager(index_dir="faiss_test_index")
+    ingestion = DataIngestion(
+        data_dir="data/data_analysis",
+        faiss_manager=faiss_manager,
+        chunk_size=1000,
+        chunk_overlap=200,
+    )
 
-        total_chunks = ingestion.ingest()
-        print(f"Ingestion completed. Total chunks indexed: {total_chunks}")
+    total_chunks = ingestion.ingest()
+    print(f"Total chunks ingested: {total_chunks}")    
+
