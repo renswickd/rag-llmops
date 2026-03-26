@@ -97,3 +97,10 @@ class FaissManager:
                 valid_docs.append(doc)
 
         return valid_docs
+    
+if __name__ == "__main__":
+    from langchain_core.documents import Document
+    docs = [Document(page_content="This is a test document.", metadata={"source": "test1.txt"})]
+    manager = FaissManager(index_dir="faiss_test_index")
+    vs = manager.load_or_create(docs)
+    print(f"FAISS index total documents: {vs.index.ntotal}")
