@@ -24,3 +24,8 @@ embedding_model:
 
 path:
   data_dir: data
+
+data_ingestion:
+  chunk_size: 1000
+  chunk_overlap: 150
+  
