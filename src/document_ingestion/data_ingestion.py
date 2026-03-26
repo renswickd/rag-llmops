@@ -35,3 +35,44 @@ class DataIngestion:
 
         if not self.data_dir.exists():
             raise RagAssistantException(f"Data directory does not exist: {self.data_dir}")
+        self.log.info("DataIngestion initialized", data_dir=str(self.data_dir), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
+
+    
+    def load_documents(self) -> List[Document]:
+        try:
+            documents: List[Document] = []
+
+            for file_path in self.data_dir.rglob("*"):
+                if not file_path.is_file():
+                    continue
+
+                suffix = file_path.suffix.lower()
+
+                try:
+                    if suffix == ".txt":
+                        loader = TextLoader(str(file_path), encoding="utf-8")
+                    elif suffix == ".md":
+                        loader = UnstructuredMarkdownLoader(str(file_path))
+                    elif suffix == ".pdf":
+                        loader = PyPDFLoader(str(file_path))
+                    else:
+                        self.log.info("Skipping unsupported file", file=str(file_path), suffix=suffix)
+                        continue
+
+                    docs = loader.load()
+
+                    for doc in docs:
+                        doc.metadata["source"] = str(file_path)
+                        doc.metadata["file_name"] = file_path.name
+
+                    documents.extend(docs)
+
+                except Exception as e:
+                    self.log.error("Failed to load file", file=str(file_path), error=str(e))
+
+            self.log.info("Documents loaded successfully", total_docs=len(documents))
+            return documents
+
+        except Exception as e:
+            self.log.error("Failed during document loading", error=str(e))
+            raise RagAssistantException("Failed to load documents", e) from e
