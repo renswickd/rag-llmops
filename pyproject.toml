@@ -5,6 +5,7 @@ description = "End-to-end implementation of RAG with LLMOps best practice"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "faiss-cpu>=1.13.2",
     "fastapi>=0.135.1",
     "jsonpatch==1.33",
     "langchain>=1.2.13",

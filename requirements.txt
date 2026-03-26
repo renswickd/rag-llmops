@@ -14,3 +14,4 @@ pytest
 PyMuPDF
 langchain-text-splitters
 langchain-community
+faiss-cpu
