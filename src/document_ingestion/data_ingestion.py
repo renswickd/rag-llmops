@@ -10,7 +10,7 @@ from langchain_community.document_loaders import TextLoader, PyPDFLoader, Unstru
 from core.config import load_config
 from core.logging_config import get_logger
 from core.exceptions import RagAssistantException
-from document_ingestion.faiss_manager import FaissManager
+from src.document_ingestion.faiss_manager import FaissManager
 
 log = get_logger(__name__)
 load_dotenv()
