@@ -187,7 +187,7 @@ if __name__ == "__main__":
         Document(page_content="Embeddings map text to dense vector representations.", metadata={"source": "embeddings.txt"}),
     ]
  
-    manager = FaissManager(index_dir=Path("faiss_smoke_test"))
+    manager = FaissManager(index_dir=Path("faiss_test_index"))
     retriever = Retriever(faiss_manager=manager, top_k=2, search_type="similarity")
     retriever.initialize(docs=sample_docs)
  
@@ -204,4 +204,6 @@ if __name__ == "__main__":
  
     lc = retriever.as_langchain_retriever()
     print(f"\n--- LangChain retriever type: {type(lc).__name__} ---")
-    print(retriever)
+    retrieved_docs = retriever.retrieve("What is Retrieval-Augmented Generation?")
+    for doc in retrieved_docs:
+        print(f"  [{doc.metadata['source']}] {doc.page_content}")
