@@ -1,5 +1,6 @@
 from typing import Optional, List
 from langchain_core.documents import Document
+from langchain_core.vectorstores import VectorStoreRetriever
 
 from core.config import load_config
 from core.logging_config import get_logger
@@ -88,6 +89,86 @@ class Retriever:
         except Exception as e:
             self.log.error("Retrieval failed", error=str(e), query_preview=query[:80])
             raise RagAssistantException("Retrieval failed", e) from e
+        
+    def retrieve_with_scores(self, query: str, top_k: Optional[int] = None) -> List[tuple[Document, float]]:
+
+        self._require_vs()
+        k = top_k or self.top_k
+ 
+        try:
+            results = self.faiss_manager.vs.similarity_search_with_score(query, k=k)
+            self.log.info(
+                "Retrieval with scores completed",
+                query_preview=query[:80],
+                num_results=len(results),
+                k=k,
+            )
+            return results
+        except Exception as e:
+            self.log.error("Scored retrieval failed", error=str(e))
+            raise RagAssistantException("Scored retrieval failed", e) from e
+    
+    def as_langchain_retriever(self, top_k: Optional[int] = None, search_type: Optional[str] = None) -> VectorStoreRetriever:
+        
+        self._require_vs()
+        k = top_k or self.top_k
+        stype = search_type or self.search_type
+ 
+        search_kwargs: dict = {"k": k}
+ 
+        if stype == "mmr":
+            search_kwargs["fetch_k"] = self.fetch_k
+            search_kwargs["lambda_mult"] = self.lambda_mult
+        elif stype == "similarity_score_threshold":
+            if self.score_threshold is None:
+                raise RagAssistantException(
+                    "score_threshold must be set when search_type='similarity_score_threshold'."
+                )
+            search_kwargs["score_threshold"] = self.score_threshold
+ 
+        lc_retriever = self.faiss_manager.vs.as_retriever(
+            search_type=stype,
+            search_kwargs=search_kwargs,
+        )
+ 
+        self.log.info("LangChain retriever created", search_type=stype, search_kwargs=search_kwargs)
+        return lc_retriever
+    
+    # ----------------
+    # Helper Functions
+    # ----------------
+    def _similarity_search(self, query: str, k: int) -> List[Document]:
+        return self.faiss_manager.vs.similarity_search(query, k=k)
+ 
+    def _mmr_search(self, query: str, k: int) -> List[Document]:
+        return self.faiss_manager.vs.max_marginal_relevance_search(
+            query,
+            k=k,
+            fetch_k=self.fetch_k,
+            lambda_mult=self.lambda_mult,
+        )
+ 
+    def _similarity_search_with_threshold(self, query: str, k: int) -> List[Document]:
+        if self.score_threshold is None:
+            raise RagAssistantException(
+                "score_threshold must be set when using search_type='similarity_score_threshold'."
+            )
+        pairs = self.faiss_manager.vs.similarity_search_with_score(query, k=k)
+        # FAISS returns L2 distances (lower = more similar). Convert to a
+        # relevance-like score via 1 / (1 + distance) for threshold comparison.
+        filtered = [
+            doc
+            for doc, dist in pairs
+            if (1.0 / (1.0 + dist)) >= self.score_threshold
+        ]
+        self.log.info(
+            "Threshold filtering applied",
+            candidates=len(pairs),
+            passed=len(filtered),
+            threshold=self.score_threshold,
+        )
+        return filtered
+
 
 if __name__ == "__main__":
     from src.document_ingestion.faiss_manager import FaissManager
