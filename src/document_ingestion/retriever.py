@@ -178,6 +178,7 @@ if __name__ == "__main__":
     
     from langchain_core.documents import Document
     from src.document_ingestion.faiss_manager import FaissManager
+    from pathlib import Path
  
     sample_docs = [
         Document(page_content="LangChain makes building RAG apps straightforward.", metadata={"source": "intro.txt"}),
@@ -190,7 +191,7 @@ if __name__ == "__main__":
     retriever = Retriever(faiss_manager=manager, top_k=2, search_type="similarity")
     retriever.initialize(docs=sample_docs)
  
-    print(f"\nTotal indexed vectors: {retriever.total_indexed_docs}")
+    # print(f"\nTotal indexed vectors: {retriever.total_indexed_docs}")
  
     query = "How does FAISS work?"
     print(f"\n--- similarity search: '{query}' ---")
