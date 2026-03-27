@@ -171,7 +171,36 @@ class Retriever:
 
 
 if __name__ == "__main__":
-    from src.document_ingestion.faiss_manager import FaissManager
+    # from src.document_ingestion.faiss_manager import FaissManager
 
-    faiss_manager = FaissManager(index_dir="faiss_test_index")
-    retriever = Retriever(faiss_manager=faiss_manager)
+    # faiss_manager = FaissManager(index_dir="faiss_test_index")
+    # retriever = Retriever(faiss_manager=faiss_manager)
+    
+    from langchain_core.documents import Document
+    from src.document_ingestion.faiss_manager import FaissManager
+ 
+    sample_docs = [
+        Document(page_content="LangChain makes building RAG apps straightforward.", metadata={"source": "intro.txt"}),
+        Document(page_content="FAISS is a library for efficient similarity search.", metadata={"source": "faiss.txt"}),
+        Document(page_content="Retrieval-Augmented Generation improves LLM accuracy.", metadata={"source": "rag.txt"}),
+        Document(page_content="Embeddings map text to dense vector representations.", metadata={"source": "embeddings.txt"}),
+    ]
+ 
+    manager = FaissManager(index_dir=Path("faiss_smoke_test"))
+    retriever = Retriever(faiss_manager=manager, top_k=2, search_type="similarity")
+    retriever.initialize(docs=sample_docs)
+ 
+    print(f"\nTotal indexed vectors: {retriever.total_indexed_docs}")
+ 
+    query = "How does FAISS work?"
+    print(f"\n--- similarity search: '{query}' ---")
+    for doc in retriever.retrieve(query):
+        print(f"  [{doc.metadata['source']}] {doc.page_content}")
+ 
+    print(f"\n--- scored search ---")
+    for doc, score in retriever.retrieve_with_scores(query):
+        print(f"  score={score:.4f}  [{doc.metadata['source']}] {doc.page_content}")
+ 
+    lc = retriever.as_langchain_retriever()
+    print(f"\n--- LangChain retriever type: {type(lc).__name__} ---")
+    print(retriever)
