@@ -24,3 +24,20 @@ embedding_model:
 
 path:
   data_dir: data
+
+data_ingestion:
+  chunk_size: 1000
+  chunk_overlap: 150
+
+retriever:
+  supported_search_types:
+    - similarity
+    - mmr
+    - similarity_score_threshold
+  default_search_type: similarity
+  default_top_k: 4
+  default_score_threshold: 0.75
+  default_fetch_k: 20
+  default_lambda_mult: 0.5
+
+  

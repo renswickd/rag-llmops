@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from src.document_ingestion import data_ingestion as data_ingestion
+from src.document_ingestion import load_data as load_data
 
 
 def setup_module(module):
@@ -11,32 +11,32 @@ def setup_module(module):
 
 
 def test_init_creates_session_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(data_ingestion, "load_config", lambda p: {"path": {"data_dir": str(tmp_path)}})
-    monkeypatch.setattr(data_ingestion, "generate_session_id", lambda prefix: "sess-123")
+    monkeypatch.setattr(load_data, "load_config", lambda p: {"path": {"data_dir": str(tmp_path)}})
+    monkeypatch.setattr(load_data, "generate_session_id", lambda prefix: "sess-123")
 
-    handler = data_ingestion.DocHandler(data_dir=None, session_id=None)
+    handler = load_data.DocHandler(data_dir=None, session_id=None)
 
     assert handler.session_id == "sess-123"
     assert os.path.isdir(handler.session_path)
 
 
 def test_archive_pdf_from_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(data_ingestion, "load_config", lambda p: {"path": {"data_dir": str(tmp_path)}})
-    monkeypatch.setattr(data_ingestion, "generate_session_id", lambda prefix: "sess-path")
+    monkeypatch.setattr(load_data, "load_config", lambda p: {"path": {"data_dir": str(tmp_path)}})
+    monkeypatch.setattr(load_data, "generate_session_id", lambda prefix: "sess-path")
 
     # create a small dummy "pdf" file
     src_pdf = tmp_path / "input.pdf"
     src_pdf.write_bytes(b"%PDF-1.4 dummy")
 
-    handler = data_ingestion.DocHandler()
+    handler = load_data.DocHandler()
     out_path = handler.archive_pdf(str(src_pdf))
 
     assert os.path.exists(out_path)
     assert out_path.endswith("input.pdf")
 
 def test_read_pdf_mocked(monkeypatch, tmp_path):
-    monkeypatch.setattr(data_ingestion, "load_config", lambda p: {"path": {"data_dir": str(tmp_path)}})
-    monkeypatch.setattr(data_ingestion, "generate_session_id", lambda prefix: "sess-read")
+    monkeypatch.setattr(load_data, "load_config", lambda p: {"path": {"data_dir": str(tmp_path)}})
+    monkeypatch.setattr(load_data, "generate_session_id", lambda prefix: "sess-read")
 
     # Fake fitz.open to return a context manager with pages
     class FakePage:
@@ -63,9 +63,9 @@ def test_read_pdf_mocked(monkeypatch, tmp_path):
     def fake_open(path):
         return FakeDoc(["page1 text", "page2 text"])
 
-    monkeypatch.setattr(data_ingestion.fitz, "open", fake_open)
+    monkeypatch.setattr(load_data.fitz, "open", fake_open)
 
-    handler = data_ingestion.DocHandler()
+    handler = load_data.DocHandler()
     # path may be arbitrary since fitz.open is mocked
     text = handler.read_pdf(str(tmp_path / "irrelevant.pdf"))
 

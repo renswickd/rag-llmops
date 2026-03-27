@@ -5,3 +5,5 @@ __pycache__
 .pytest_cache
 *.egg-info
 data/
+_deleteme.py
+faiss_test_index

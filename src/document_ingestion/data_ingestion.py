@@ -1,36 +1,115 @@
 import os
-import fitz  # PyMuPDF
+from pathlib import Path
+from typing import List
 from dotenv import load_dotenv
 from typing import Optional
+
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import TextLoader, PyPDFLoader, UnstructuredMarkdownLoader
+
 from core.config import load_config
 from core.logging_config import get_logger
-from core.exceptions import RagAssistantException
 from utils.file_handling import generate_session_id
+from core.exceptions import RagAssistantException
+from src.document_ingestion.faiss_manager import FaissManager
 
 log = get_logger(__name__)
+load_dotenv()
 
-class DocHandler:
-    """
-    PDF archive + read (page-wise) for analysis.
-    """
-    def __init__(self, data_dir: Optional[str] = None, session_id: Optional[str] = None):
-        load_dotenv()
-        log.info("Environment variables loaded from .env file - in data_ingestion.py")
+config = load_config(os.getenv("CONFIG_PATH"))
+log.info("YAML config loaded - in load_data.py", config_keys=list(config.keys()))
 
-        self.config = load_config(os.getenv("CONFIG_PATH"))
-        log.info("YAML config loaded - in data_ingestion.py", config_keys=list(self.config.keys()))
-        
-        self.data_dir = data_dir
-        if not self.data_dir:
-            default_data_dir = os.path.join(os.getcwd(), "data", "document_analysis")
-            self.data_dir = self.config["path"]["data_dir"] or default_data_dir
-            
+class DataIngestion:
+    def __init__(
+            self,
+            data_dir: str | Path,
+            faiss_manager: FaissManager, 
+            chunk_size: int = config["data_ingestion"]["chunk_size"], 
+            chunk_overlap: int = config["data_ingestion"]["chunk_overlap"],
+            session_id: Optional[str] = None
+        ):
+
+        self.log = get_logger(__name__)
+        self.data_dir = Path(data_dir)
+        self.faiss_manager = faiss_manager
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
         self.session_id = session_id or generate_session_id("session")
         self.session_path = os.path.join(self.data_dir, self.session_id)
         os.makedirs(self.session_path, exist_ok=True)
-        log.info("DocHandler initialized", session_id=self.session_id, session_path=self.session_path)
-        
-    def archive_pdf(self, uploaded_file) -> str:
+        log.info("DataIngestion initialized", session_id=self.session_id, session_path=self.session_path)
+
+        if not self.data_dir.exists():
+            raise RagAssistantException(f"Data directory does not exist: {self.data_dir}")
+        self.log.info("DataIngestion initialized", data_dir=str(self.data_dir), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
+
+    
+    def load_documents(self) -> List[Document]:
+        try:
+            documents: List[Document] = []
+            log.info("Starting document loading", data_dir=str(self.data_dir))
+            log.info("Data directory contents", files=[str(f) for f in self.data_dir.rglob("*") if f.is_file()])
+
+            for file_path in self.data_dir.rglob("*"):
+                if not file_path.is_file():
+                    continue
+
+                suffix = file_path.suffix.lower()
+
+                try:
+                    if suffix == ".txt":
+                        loader = TextLoader(str(file_path), encoding="utf-8")
+                    elif suffix == ".md":
+                        loader = UnstructuredMarkdownLoader(str(file_path))
+                    elif suffix == ".pdf":
+                        loader = PyPDFLoader(str(file_path))
+                    else:
+                        self.log.info("Skipping unsupported file", file=str(file_path), suffix=suffix)
+                        continue
+
+                    docs = loader.load()
+                    archive_path = self.archive_file_in_session_path(file_path)
+                    log.info("File loaded and archived", file=str(file_path), archive_path=archive_path, num_docs=len(docs))
+
+                    for doc in docs:
+                        doc.metadata["source"] = str(file_path)
+                        doc.metadata["file_name"] = file_path.name
+
+                    documents.extend(docs)
+
+                except Exception as e:
+                    self.log.error("Failed to load file", file=str(file_path), error=str(e))
+
+            self.log.info("Documents loaded successfully", total_docs=len(documents))
+            return documents
+
+        except Exception as e:
+            self.log.error("Failed during document loading", error=str(e))
+            raise RagAssistantException("Failed to load documents", e)
+
+    def chunk_documents(self, docs: List[Document]) -> List[Document]:
+        try:
+            if not docs:
+                raise RagAssistantException("No documents available for chunking")
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap,
+            )
+
+            chunked_docs = splitter.split_documents(docs)
+
+            self.log.info("Documents chunked successfully",original_docs=len(docs), chunked_docs=len(chunked_docs), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap,)
+            return chunked_docs
+
+        except Exception as e:
+            self.log.error("Failed during document chunking", error=str(e))
+            raise RagAssistantException("Failed to chunk documents", e)
+    
+    
+    def archive_file_in_session_path(self, uploaded_file) -> str:
         try:
             # Determine filename from common attributes
             if hasattr(uploaded_file, "filename") and getattr(uploaded_file, "filename"):
@@ -40,11 +119,9 @@ class DocHandler:
             elif hasattr(uploaded_file, "name"):
                 filename = os.path.basename(getattr(uploaded_file, "name"))
             else:
-                filename = uploaded_file
+                filename = str(uploaded_file)
 
-            if not filename.lower().endswith(".pdf"):
-                raise ValueError("Invalid file type. Only PDFs are allowed.")
-
+            # os.makedirs(self.session_path, exist_ok=True)
             save_path = os.path.join(self.session_path, filename)
 
             # Handle different uploaded_file types
@@ -64,31 +141,29 @@ class DocHandler:
                     data = data.encode()
                 with open(save_path, "wb") as f:
                     f.write(data)
+            elif isinstance(uploaded_file, (bytes, bytearray)):
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file)
             else:
-                raise ValueError("Unsupported uploaded_file type")
+                # Fallback: write string representation
+                with open(save_path, "wb") as f:
+                    f.write(str(uploaded_file).encode())
 
-            log.info("Input files saved successfully", file=filename, save_path=save_path, session_id=self.session_id)
+            self.log.info("Archived file successfully", file=filename, save_path=save_path, session_id=self.session_id)
             return save_path
         except Exception as e:
-            log.error("Failed to save input files", error=str(e), session_id=self.session_id)
-            raise RagAssistantException(f"Failed to save input files: {str(e)}", e) from e
-
-    def read_pdf(self, pdf_path: str) -> str:
+            self.log.error("Failed to archive file", error=str(e), session_id=self.session_id)
+            raise RagAssistantException(f"Failed to archive file: {str(e)}", e)
+        
+    def ingest(self) -> int:
         try:
-            text_chunks = []
-            with fitz.open(pdf_path) as doc:
-                for page_num in range(doc.page_count):
-                    page = doc.load_page(page_num)
-                    text_chunks.append(f"\n--- Page {page_num + 1} ---\n{page.get_text()}") 
-            text = "\n".join(text_chunks)
-            log.info(f"Input read successfully with total pages{len(text_chunks)}", pdf_path=pdf_path, session_id=self.session_id, pages=len(text_chunks))
-            return text
+            raw_docs = self.load_documents()
+            chunked_docs = self.chunk_documents(raw_docs)
+
+            self.faiss_manager.load_or_create(chunked_docs)
+            self.log.info("Data ingestion completed successfully", total_chunks=len(chunked_docs))
+            return len(chunked_docs)
+
         except Exception as e:
-            log.error("Failed to read input", error=str(e), pdf_path=pdf_path, session_id=self.session_id)
-            raise RagAssistantException(f"Could not process input files: {pdf_path}", e) from e
-
-if __name__ == "__main__":
-    # Example usage
-    handler = DocHandler()
-    log.info("DocHandler example instance created", session_id=handler.session_id, session_path=handler.session_path)
-
+            self.log.error("Data ingestion failed", error=str(e))
+            raise RagAssistantException("Data ingestion failed", e)
