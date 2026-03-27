@@ -60,6 +60,34 @@ class Retriever:
                 "Vector store is not initialized. "
                 "Call Retriever.initialize() or FaissManager.load() / create() first."
             )
+            
+    def retrieve(self, query: str, top_k: Optional[int] = None) -> List[Document]:
+
+        self._require_vs()
+        k = top_k or self.top_k
+ 
+        try:
+            if self.search_type == "similarity":
+                results = self._similarity_search(query, k)
+            elif self.search_type == "mmr":
+                results = self._mmr_search(query, k)
+            elif self.search_type == "similarity_score_threshold":
+                results = self._similarity_search_with_threshold(query, k)
+            else:
+                raise RagAssistantException(f"Unknown search_type: {self.search_type}")
+ 
+            self.log.info(
+                "Retrieval completed",
+                query_preview=query[:80],
+                search_type=self.search_type,
+                num_results=len(results),
+                k=k,
+            )
+            return results
+ 
+        except Exception as e:
+            self.log.error("Retrieval failed", error=str(e), query_preview=query[:80])
+            raise RagAssistantException("Retrieval failed", e) from e
 
 if __name__ == "__main__":
     from src.document_ingestion.faiss_manager import FaissManager
