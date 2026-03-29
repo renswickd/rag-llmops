@@ -3,9 +3,11 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from langchain_core.chat_history import InMemoryChatMessageHistory
- 
+
+from utils.model_loader import ModelLoader
 from core.config import load_config
 from core.logging_config import get_logger
+from utils.file_handling import generate_session_id
 from core.exceptions import RagAssistantException
 from src.document_ingestion.retriever import Retriever
 
@@ -42,6 +44,7 @@ class ChatManager:
         max_tokens: int = config["llm"]["groq"]["max_output_tokens"],
         condense_question: bool = config["llm"]["groq"].get("condense_question", True),
         max_history_turns: int = config["llm"]["groq"].get("max_history_turns", 10),
+        session_id: Optional[str] = None,
     ):
         
         self.log = get_logger(__name__)
@@ -53,8 +56,22 @@ class ChatManager:
         self.max_history_turns = max_history_turns
  
         self._sessions: dict[str, InMemoryChatMessageHistory] = {}
+        
+        self._llm = ModelLoader().load_llm()
+        self.session_id = session_id or generate_session_id("session")
  
         self.log.info("ChatManager initialized", model=self.model_name, condense_question=self.condense_question, max_history_turns=self.max_history_turns)
+        
+        
+        
+    # ---------------
+    # Helper methods
+    # ---------------
+    def _get_or_create_history_session(self) -> InMemoryChatMessageHistory:
+        if self.session_id not in self._sessions:
+            self._sessions[self.session_id] = InMemoryChatMessageHistory()
+            self.log.info("New history session created", session_id=self.session_id)
+        return self._sessions[self.session_id]
         
 
 if __name__ == "__main__":
