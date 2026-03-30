@@ -118,12 +118,7 @@ class ChatManager:
             ]
  
             self.log.info(
-                "Chat turn completed",
-                session_id=session_id,
-                standalone_q=standalone_q[:80],
-                num_sources=len(sources),
-                history_len=len(history.messages),
-            )
+                "Chat turn completed", session_id=session_id, standalone_q=standalone_q[:80], num_sources=len(sources), history_len=len(history.messages))
  
             return {
                 "answer": answer,
@@ -133,12 +128,19 @@ class ChatManager:
                 "standalone_q": standalone_q,
             }
  
-        except RagAssistantException:
-            raise
         except Exception as e:
             self.log.error("Chat turn failed", session_id=session_id, error=str(e))
             raise RagAssistantException("Chat turn failed", e) from e
-        
+    
+    def clear_session(self, session_id: str) -> bool:
+        if session_id in self._sessions:
+            del self._sessions[session_id]
+            self.log.info("Session cleared", session_id=session_id)
+            return True
+        return False
+ 
+    def list_sessions(self) -> list[str]:
+        return list(self._sessions.keys())
         
     # ---------------
     # Helper methods
