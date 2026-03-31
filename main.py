@@ -2,49 +2,33 @@ from utils.model_loader import ModelLoader
 
 
 if __name__ == "__main__":
-    # ------------------------------
-    # Test LLM and Embeddings loading
-    # ------------------------------
-    # loader = ModelLoader()
-
-    # llm = loader.load_llm()
-    # result = llm.invoke("Who won the cricket world cup in 2019?")
-    # print(f"LLM Result: {result.content}")
-
-    # Test Embedding
-    # embeddings = loader.load_embeddings()
-    # print(f"Embedding Model Loaded: {embeddings}")
-    # result = embeddings.embed_query("Hello, how are you?")
-    # print(f"Embedding Result: {len(result)}")
-    
     # -----------------------------
-    # Test DocHandler
+    # Test conversational retrieval chain
     # -----------------------------
-    
-    # from src.document_ingestion.load_data import DocHandler
-    # handler = DocHandler()
-    # print(f"DocHandler session path: {handler.session_path}")
-
-    # saved_path = handler.archive_pdf("data/data_analysis/sample-doc-for-rag.pdf")
-    # print(f"PDF saved at: {saved_path}")
-    # text = handler.read_pdf(saved_path)
-    # print(f"Extracted text length: {len(text)}")
-
-    # -----------------------------
-    # Test FAISS Manager
-    # -----------------------------
+    from pathlib import Path
     from src.document_ingestion.faiss_manager import FaissManager
-    from src.document_ingestion.data_ingestion import DataIngestion
+    from src.conversation.chat_manager import ChatManager
+    from src.document_ingestion.retriever import Retriever
+    from src.conversation.prompt_builder import RAG_PROMPT, STANDALONE_PROMPT, format_docs
+
+    faiss_manager = FaissManager(index_dir=Path("faiss_smoke_index"))
+
+    # Sample documents already ingested - in folder data/sample_docs/
+    manager = FaissManager(index_dir=Path("faiss_smoke_index"))
+    retriever = Retriever(faiss_manager=manager, top_k=2)
+    retriever.initialize()  # Load existing FAISS index
+    chat_manager = ChatManager(retriever=retriever)
 
 
-    faiss_manager = FaissManager(index_dir="faiss_test_index")
-    ingestion = DataIngestion(
-        data_dir="data/data_analysis",
-        faiss_manager=faiss_manager,
-        chunk_size=1000,
-        chunk_overlap=200,
-    )
-
-    total_chunks = ingestion.ingest()
-    print(f"Total chunks ingested: {total_chunks}")    
-
+    question = "What does Red-Tapism mean in the context of government bureaucracy?"
+    # chat_history = []  # No prior conversation for this test
+    
+    sid = "smoke-session-1"
+ 
+    q1 = "What does Red-Tapism mean in the context of government?"
+    r1 = chat_manager.chat(q1, session_id=sid)
+    print(f"\nQ: {q1}\nA: {r1['answer']}\nSources: {r1['sources']}\n")
+ 
+    q2 = "How does it compare bureaucratic procedure?"
+    r2 = chat_manager.chat(q2, session_id=sid)
+    print(f"Q: {q2}\nA: {r2['answer']}\nStandalone Q sent to retriever: {r2['standalone_q']}\n")

@@ -56,10 +56,12 @@ class FaissManager:
             raise RagAssistantException("Failed to create FAISS index", e) from e
 
     def load_or_create(self, docs: Optional[List[Document]] = None) -> FAISS:
-        if not docs:
-            raise RagAssistantException("No existing FAISS index and no documents provided to create one")
+        
         if self._exists():
             return self.load()
+        
+        if not docs:
+            raise RagAssistantException("No existing FAISS index and no documents provided to create one")
 
         return self.create(docs)
 
