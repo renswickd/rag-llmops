@@ -91,4 +91,3 @@ if __name__ == "__main__":
     # Example usage
     handler = DocHandler()
     log.info("DocHandler example instance created", session_id=handler.session_id, session_path=handler.session_path)
-

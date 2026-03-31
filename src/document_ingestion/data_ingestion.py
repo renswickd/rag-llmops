@@ -167,3 +167,15 @@ class DataIngestion:
         except Exception as e:
             self.log.error("Data ingestion failed", error=str(e))
             raise RagAssistantException("Data ingestion failed", e)
+
+if __name__ == "__main__":
+    # Data Ingestion smoke test
+    from src.document_ingestion.faiss_manager import FaissManager
+    faiss_manager = FaissManager(index_dir=Path("faiss_smoke_index"))
+    data_ingestion = DataIngestion(data_dir=Path("data/sample_docs"),
+                                      faiss_manager=faiss_manager,
+                                      chunk_size=500, 
+                                      chunk_overlap=50)
+    
+    num_chunks = data_ingestion.ingest()
+    print(f"Data ingestion completed with {num_chunks} chunks created and indexed.")

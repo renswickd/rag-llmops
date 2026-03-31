@@ -6,4 +6,6 @@ __pycache__
 *.egg-info
 data/
 _deleteme.py
-faiss_test_index
+faiss_test_index/
+faiss_smoke_index/
+.DS_Store
