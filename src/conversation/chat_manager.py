@@ -88,7 +88,7 @@ class ChatManager:
         if not question or not question.strip():
             raise RagAssistantException("Question must not be empty.")
  
-        history = self._get_or_create_history_session()
+        history = self._get_or_create_history_session(session_id)
         chat_history: list[BaseMessage] = self._windowed_history(history)
  
         try:
@@ -145,11 +145,11 @@ class ChatManager:
     # ---------------
     # Helper methods
     # ---------------
-    def _get_or_create_history_session(self) -> InMemoryChatMessageHistory:
-        if self.session_id not in self._sessions:
-            self._sessions[self.session_id] = InMemoryChatMessageHistory()
-            self.log.info("New history session created", session_id=self.session_id)
-        return self._sessions[self.session_id]
+    def _get_or_create_history_session(self, session_id: str) -> InMemoryChatMessageHistory:
+        if session_id not in self._sessions:
+            self._sessions[session_id] = InMemoryChatMessageHistory()
+            self.log.info("New history session created", session_id=session_id)
+        return self._sessions[session_id]
     
     def _windowed_history(self, history: InMemoryChatMessageHistory ) -> list[BaseMessage]:
         """
