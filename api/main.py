@@ -33,9 +33,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="RAG LLMOps API",
-    description="A document Q&A API powered by Retrieval-Augmented Generation.",
-    version="0.1.0",
+    title=config["app"]["name"],
+    description=config["app"]["description"],
+    version=config["app"]["version"],
     lifespan=lifespan,
 )
 

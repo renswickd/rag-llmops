@@ -53,7 +53,7 @@ def init_services() -> None:
         _faiss_manager.load()
         log.info("Existing FAISS index loaded at startup", index_dir=str(index_dir))
     else:
-        log.info("No existing FAISS index found — upload a document to get started", index_dir=str(index_dir))
+        log.warning("No existing FAISS index found — upload a document to get started", index_dir=str(index_dir))
 
     _chat_manager = ChatManager(retriever=_retriever)
 

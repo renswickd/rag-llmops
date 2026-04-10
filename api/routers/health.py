@@ -11,6 +11,6 @@ def health_check():
     return {
         "status": "ok",
         "app": config["app"]["name"],
-        "version": "0.1.0",
+        "version": config["app"]["version"],
         "environment": config["app"]["environment"],
     }

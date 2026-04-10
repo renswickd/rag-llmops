@@ -16,3 +16,4 @@ langchain-text-splitters
 langchain-community
 faiss-cpu
 pypdf
+python-multipart

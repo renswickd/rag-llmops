@@ -23,7 +23,7 @@ class DocHandler:
         self.data_dir = data_dir
         if not self.data_dir:
             default_data_dir = os.path.join(os.getcwd(), "data", "document_analysis")
-            self.data_dir = self.config["path"]["data_dir"] or default_data_dir
+            self.data_dir = self.config["data"]["data_dir"] or default_data_dir
             
         self.session_id = session_id or generate_session_id("session")
         self.session_path = os.path.join(self.data_dir, self.session_id)

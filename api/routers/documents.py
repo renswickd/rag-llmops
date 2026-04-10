@@ -1,4 +1,3 @@
-import shutil
 import tempfile
 from pathlib import Path
 
@@ -18,7 +17,8 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 config = load_config()
 
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md"}
+# ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md"}
+ALLOWED_EXTENSIONS = set(config["data"]["allowed_extensions"])
 
 
 @router.post("/upload", response_model=UploadResponse)
