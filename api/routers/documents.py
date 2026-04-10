@@ -80,14 +80,14 @@ async def upload_document(
             added = len(chunks)
 
         log.info("Document ingested", file=file.filename, chunks=added, session_id=sid)
+        
+        return UploadResponse(
+            session_id=sid,
+            file_name=file.filename,
+            chunks_created=added,
+            message=f"'{file.filename}' ingested successfully with {added} chunks.",
+        )
 
     except RagAssistantException as e:
         log.error("Ingestion failed", file=file.filename, error=str(e))
         raise HTTPException(status_code=500, detail=str(e.error_message))
-
-    return UploadResponse(
-        session_id=sid,
-        file_name=file.filename,
-        chunks_created=added,
-        message=f"'{file.filename}' ingested successfully with {added} chunks.",
-    )
