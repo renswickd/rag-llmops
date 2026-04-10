@@ -131,7 +131,7 @@ def test_clear_session_removes_existing_session(
         session_id="test-session",
     )
 
-    manager._get_or_create_history_session()
+    manager._get_or_create_history_session("test-session")
 
     assert "test-session" in manager.list_sessions()
 
