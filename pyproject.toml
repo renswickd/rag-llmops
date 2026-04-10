@@ -26,3 +26,8 @@ dependencies = [
     "structlog>=25.5.0",
     "uvicorn>=0.42.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "conversation*", "ingestion*", "core*", "utils*", "scripts*"]
+exclude = ["tests*"]

@@ -6,10 +6,10 @@ if __name__ == "__main__":
     # Test conversational retrieval chain
     # -----------------------------
     from pathlib import Path
-    from src.document_ingestion.faiss_manager import FaissManager
-    from src.conversation.chat_manager import ChatManager
-    from src.document_ingestion.retriever import Retriever
-    from src.document_ingestion.data_ingestion import DataIngestion
+    from ingestion.faiss_manager import FaissManager
+    from conversation.chat_manager import ChatManager
+    from ingestion.retriever import Retriever
+    from ingestion.data_ingestion import DataIngestion
 
     # faiss_manager = FaissManager(index_dir=Path("faiss_smoke_index"))
 

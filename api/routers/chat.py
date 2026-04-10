@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_chat_manager
 from api.schemas.chat import ChatRequest, ChatResponse
-from src.conversation.chat_manager import ChatManager
+from conversation.chat_manager import ChatManager
 from core.exceptions import RagAssistantException
 from core.logging_config import get_logger
 

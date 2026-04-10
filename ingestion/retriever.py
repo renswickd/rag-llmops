@@ -5,7 +5,7 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from core.config import load_config
 from core.logging_config import get_logger
 from core.exceptions import RagAssistantException
-from src.document_ingestion.faiss_manager import FaissManager
+from ingestion.faiss_manager import FaissManager
 
 config = load_config()
 
@@ -171,13 +171,13 @@ class Retriever:
 
 
 if __name__ == "__main__":
-    # from src.document_ingestion.faiss_manager import FaissManager
+    # from ingestion.faiss_manager import FaissManager
 
     # faiss_manager = FaissManager(index_dir="faiss_test_index")
     # retriever = Retriever(faiss_manager=faiss_manager)
     
     from langchain_core.documents import Document
-    from src.document_ingestion.faiss_manager import FaissManager
+    from ingestion.faiss_manager import FaissManager
     from pathlib import Path
  
     sample_docs = [

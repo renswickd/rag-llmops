@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, AIMessage
 
 from core.exceptions import RagAssistantException
-from src.conversation.chat_manager import ChatManager
+from conversation.chat_manager import ChatManager
 
 
 @pytest.fixture
@@ -20,8 +20,8 @@ def mock_retriever():
     return retriever
 
 
-@patch("src.conversation.chat_manager.generate_session_id", return_value="test-session")
-@patch("src.conversation.chat_manager.ModelLoader.load_llm")
+@patch("conversation.chat_manager.generate_session_id", return_value="test-session")
+@patch("conversation.chat_manager.ModelLoader.load_llm")
 @patch.object(ChatManager, "_build_answer_chain")
 @patch.object(ChatManager, "_build_condense_chain")
 def test_chat_success(
@@ -61,8 +61,8 @@ def test_chat_success(
     )
 
 
-@patch("src.conversation.chat_manager.generate_session_id", return_value="test-session")
-@patch("src.conversation.chat_manager.ModelLoader.load_llm")
+@patch("conversation.chat_manager.generate_session_id", return_value="test-session")
+@patch("conversation.chat_manager.ModelLoader.load_llm")
 @patch.object(ChatManager, "_build_answer_chain")
 @patch.object(ChatManager, "_build_condense_chain")
 def test_chat_empty_question_raises(
@@ -85,8 +85,8 @@ def test_chat_empty_question_raises(
         manager.chat("", session_id="test-session")
 
 
-@patch("src.conversation.chat_manager.generate_session_id", return_value="test-session")
-@patch("src.conversation.chat_manager.ModelLoader.load_llm")
+@patch("conversation.chat_manager.generate_session_id", return_value="test-session")
+@patch("conversation.chat_manager.ModelLoader.load_llm")
 @patch.object(ChatManager, "_build_answer_chain")
 @patch.object(ChatManager, "_build_condense_chain")
 def test_condense_returns_raw_question_when_no_history(
@@ -111,8 +111,8 @@ def test_condense_returns_raw_question_when_no_history(
     assert result == "Explain FAISS"
 
 
-@patch("src.conversation.chat_manager.generate_session_id", return_value="test-session")
-@patch("src.conversation.chat_manager.ModelLoader.load_llm")
+@patch("conversation.chat_manager.generate_session_id", return_value="test-session")
+@patch("conversation.chat_manager.ModelLoader.load_llm")
 @patch.object(ChatManager, "_build_answer_chain")
 @patch.object(ChatManager, "_build_condense_chain")
 def test_clear_session_removes_existing_session(

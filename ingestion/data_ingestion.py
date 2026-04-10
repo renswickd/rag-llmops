@@ -12,7 +12,7 @@ from core.config import load_config
 from core.logging_config import get_logger
 from utils.file_handling import generate_session_id
 from core.exceptions import RagAssistantException
-from src.document_ingestion.faiss_manager import FaissManager
+from ingestion.faiss_manager import FaissManager
 
 log = get_logger(__name__)
 load_dotenv()
@@ -132,6 +132,36 @@ class DataIngestion:
             raise RagAssistantException("Failed to chunk documents", e)
     
     
+    def load_file(self, file_path: Path) -> List[Document]:
+        """
+        Load a single file by path and return its LangChain Documents.
+        Supports .txt, .md, and .pdf files.
+        """
+        try:
+            file_path = Path(file_path)
+            suffix = file_path.suffix.lower()
+
+            if suffix == ".txt":
+                loader = TextLoader(str(file_path), encoding="utf-8")
+            elif suffix == ".md":
+                loader = UnstructuredMarkdownLoader(str(file_path))
+            elif suffix == ".pdf":
+                loader = PyPDFLoader(str(file_path))
+            else:
+                raise RagAssistantException(f"Unsupported file type for load_file: {suffix}")
+
+            docs = loader.load()
+            for doc in docs:
+                doc.metadata["source"] = str(file_path)
+                doc.metadata["file_name"] = file_path.name
+
+            self.log.info("Single file loaded", file=str(file_path), num_docs=len(docs))
+            return docs
+
+        except Exception as e:
+            self.log.error("Failed to load file", file=str(file_path), error=str(e))
+            raise RagAssistantException(f"Failed to load file: {file_path}", e)
+
     def archive_file_in_session_path(self, uploaded_file) -> str:
         try:
             # Determine filename from common attributes
@@ -200,7 +230,7 @@ class DataIngestion:
 
 if __name__ == "__main__":
     # Data Ingestion smoke test
-    from src.document_ingestion.faiss_manager import FaissManager
+    from ingestion.faiss_manager import FaissManager
     faiss_manager = FaissManager(index_dir=Path("faiss_smoke_index"))
     data_ingestion = DataIngestion(data_dir=Path("data/sample_docs"),
                                       faiss_manager=faiss_manager,

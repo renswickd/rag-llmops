@@ -3,11 +3,11 @@ import logging
 
 import pytest
 
-from src.document_ingestion import load_data as load_data
+from ingestion import load_data as load_data
 
 
 def setup_module(module):
-    logging.getLogger("src").setLevel(logging.CRITICAL)
+    logging.getLogger("ingestion").setLevel(logging.CRITICAL)
 
 
 def test_init_creates_session_path(tmp_path, monkeypatch):

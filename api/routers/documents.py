@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 
 from api.dependencies import get_faiss_manager
 from api.schemas.document import UploadResponse
-from src.document_ingestion.faiss_manager import FaissManager
-from src.document_ingestion.data_ingestion import DataIngestion
+from ingestion.faiss_manager import FaissManager
+from ingestion.data_ingestion import DataIngestion
 from core.config import load_config
 from core.exceptions import RagAssistantException
 from core.logging_config import get_logger

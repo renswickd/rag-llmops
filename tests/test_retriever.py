@@ -36,7 +36,7 @@ def patch_deps():
 
 @pytest.fixture
 def Retriever():
-    from src.document_ingestion.retriever import Retriever
+    from ingestion.retriever import Retriever
     return Retriever
 
 

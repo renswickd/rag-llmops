@@ -16,9 +16,9 @@ from typing import Optional
 from core.config import load_config
 from core.logging_config import get_logger
 from utils.model_loader import ModelLoader
-from src.document_ingestion.faiss_manager import FaissManager
-from src.document_ingestion.retriever import Retriever
-from src.conversation.chat_manager import ChatManager
+from ingestion.faiss_manager import FaissManager
+from ingestion.retriever import Retriever
+from conversation.chat_manager import ChatManager
 
 log = get_logger(__name__)
 config = load_config()

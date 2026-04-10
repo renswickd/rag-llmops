@@ -10,8 +10,8 @@ from core.config import load_config
 from core.logging_config import get_logger
 from utils.file_handling import generate_session_id
 from core.exceptions import RagAssistantException
-from src.document_ingestion.retriever import Retriever
-from src.conversation.prompt_builder import RAG_PROMPT, STANDALONE_PROMPT, format_docs
+from ingestion.retriever import Retriever
+from conversation.prompt_builder import RAG_PROMPT, STANDALONE_PROMPT, format_docs
 
 load_dotenv()
 config = load_config()
@@ -204,7 +204,7 @@ if __name__ == "__main__":
 
     from pathlib import Path
     from langchain_core.documents import Document
-    from src.document_ingestion.faiss_manager import FaissManager
+    from ingestion.faiss_manager import FaissManager
  
     sample_docs = [
         Document(page_content="FAISS enables fast vector similarity search at scale.", metadata={"source": "faiss.txt"}),
