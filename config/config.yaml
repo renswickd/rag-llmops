@@ -1,6 +1,8 @@
 app:
   name: rag-llmops
   environment: dev
+  description: A document Q&A API powered by Retrieval-Augmented Generation.
+  version: 0.1.0
 
 logging:
   level: INFO
@@ -24,8 +26,12 @@ embedding_model:
   device: cpu
   normalize_embeddings: true
 
-path:
+data:
   data_dir: data
+  allowed_extensions:
+    - .pdf
+    - .txt
+    - .md
 
 data_ingestion:
   chunk_size: 1000
@@ -42,4 +48,8 @@ retriever:
   default_fetch_k: 20
   default_lambda_mult: 0.5
 
-  
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  index_dir: faiss_index

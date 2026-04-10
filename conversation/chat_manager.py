@@ -10,8 +10,8 @@ from core.config import load_config
 from core.logging_config import get_logger
 from utils.file_handling import generate_session_id
 from core.exceptions import RagAssistantException
-from src.document_ingestion.retriever import Retriever
-from src.conversation.prompt_builder import RAG_PROMPT, STANDALONE_PROMPT, format_docs
+from ingestion.retriever import Retriever
+from conversation.prompt_builder import RAG_PROMPT, STANDALONE_PROMPT, format_docs
 
 load_dotenv()
 config = load_config()
@@ -88,7 +88,7 @@ class ChatManager:
         if not question or not question.strip():
             raise RagAssistantException("Question must not be empty.")
  
-        history = self._get_or_create_history_session()
+        history = self._get_or_create_history_session(session_id)
         chat_history: list[BaseMessage] = self._windowed_history(history)
  
         try:
@@ -145,11 +145,11 @@ class ChatManager:
     # ---------------
     # Helper methods
     # ---------------
-    def _get_or_create_history_session(self) -> InMemoryChatMessageHistory:
-        if self.session_id not in self._sessions:
-            self._sessions[self.session_id] = InMemoryChatMessageHistory()
-            self.log.info("New history session created", session_id=self.session_id)
-        return self._sessions[self.session_id]
+    def _get_or_create_history_session(self, session_id: str) -> InMemoryChatMessageHistory:
+        if session_id not in self._sessions:
+            self._sessions[session_id] = InMemoryChatMessageHistory()
+            self.log.info("New history session created", session_id=session_id)
+        return self._sessions[session_id]
     
     def _windowed_history(self, history: InMemoryChatMessageHistory ) -> list[BaseMessage]:
         """
@@ -204,7 +204,7 @@ if __name__ == "__main__":
 
     from pathlib import Path
     from langchain_core.documents import Document
-    from src.document_ingestion.faiss_manager import FaissManager
+    from ingestion.faiss_manager import FaissManager
  
     sample_docs = [
         Document(page_content="FAISS enables fast vector similarity search at scale.", metadata={"source": "faiss.txt"}),

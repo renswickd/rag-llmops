@@ -8,4 +8,5 @@ data/
 _deleteme.py
 faiss_test_index/
 faiss_smoke_index/
+faiss_index/
 .DS_Store

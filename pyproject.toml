@@ -20,8 +20,14 @@ dependencies = [
     "pypdf>=6.9.2",
     "pytest>=9.0.2",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.24",
     "sentence-transformers>=5.3.0",
     "streamlit>=1.55.0",
     "structlog>=25.5.0",
     "uvicorn>=0.42.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "conversation*", "ingestion*", "core*", "utils*", "scripts*"]
+exclude = ["tests*"]
