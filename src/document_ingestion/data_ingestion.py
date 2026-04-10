@@ -49,11 +49,15 @@ class DataIngestion:
     def load_documents(self) -> List[Document]:
         try:
             documents: List[Document] = []
+            session_path = Path(self.session_path)
             log.info("Starting document loading", data_dir=str(self.data_dir))
             log.info("Data directory contents", files=[str(f) for f in self.data_dir.rglob("*") if f.is_file()])
 
             for file_path in self.data_dir.rglob("*"):
                 if not file_path.is_file():
+                    continue
+                # Skip files already archived in the session directory to prevent double-loading.
+                if file_path.is_relative_to(session_path):
                     continue
 
                 suffix = file_path.suffix.lower()
@@ -125,8 +129,8 @@ class DataIngestion:
             save_path = os.path.join(self.session_path, filename)
 
             # Handle different uploaded_file types
-            if isinstance(uploaded_file, str):
-                # uploaded_file is a filesystem path
+            if isinstance(uploaded_file, (str, Path)):
+                # uploaded_file is a filesystem path (str or pathlib.Path)
                 with open(uploaded_file, "rb") as src, open(save_path, "wb") as dst:
                     dst.write(src.read())
             elif hasattr(uploaded_file, "getbuffer"):
@@ -160,9 +164,16 @@ class DataIngestion:
             raw_docs = self.load_documents()
             chunked_docs = self.chunk_documents(raw_docs)
 
-            self.faiss_manager.load_or_create(chunked_docs)
-            self.log.info("Data ingestion completed successfully", total_chunks=len(chunked_docs))
-            return len(chunked_docs)
+            # Add to existing index so previous uploads are not discarded;
+            # create a fresh index only when none exists yet.
+            if self.faiss_manager._exists() and self.faiss_manager.vs is not None:
+                added = self.faiss_manager.add_documents(chunked_docs)
+            else:
+                self.faiss_manager.create(chunked_docs)
+                added = len(chunked_docs)
+
+            self.log.info("Data ingestion completed successfully", total_chunks=added)
+            return added
 
         except Exception as e:
             self.log.error("Data ingestion failed", error=str(e))

@@ -50,12 +50,22 @@ async def upload_document(
         )
 
     sid = session_id or generate_session_id("upload")
+    contents = await file.read()
 
-    # Save uploaded file to a temporary directory so DataIngestion can read it.
-    # We use a temp dir so we don't pollute the main data directory with raw uploads.
+    # Persist the uploaded file to the configured data directory.
+    # This archive survives process restarts and temp-dir cleanups, and is the
+    # canonical copy that can be re-ingested or inspected later.
+    data_dir = Path(config["data"]["data_dir"])
+    session_dir = data_dir / sid
+    session_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = session_dir / file.filename
+    archive_path.write_bytes(contents)
+    log.info("File archived to session directory", file=file.filename, archive_path=str(archive_path), session_id=sid)
+
+    # Load and index from an isolated temp directory so DataIngestion.load_documents()
+    # only scans this single file and not every previous session under data_dir.
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir) / file.filename
-        contents = await file.read()
         tmp_path.write_bytes(contents)
 
         try:
