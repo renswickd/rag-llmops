@@ -44,7 +44,14 @@ def list_sessions(chat_mgr: ChatManager = Depends(get_chat_manager)):
     """List all active conversation session IDs."""
     if chat_mgr is None:
         raise HTTPException(status_code=503, detail="Chat service not initialised.")
-    return {"sessions": chat_mgr.list_sessions()}
+    
+    try:
+        sessions = chat_mgr.list_sessions()
+        log.info("Listed sessions", count=len(sessions), sessions=sessions)
+        return {"sessions": sessions}
+    except RagAssistantException as e:
+        log.error("Failed to list sessions", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e.error_message))
 
 
 @router.delete("/sessions/{session_id}")
@@ -52,7 +59,13 @@ def delete_session(session_id: str, chat_mgr: ChatManager = Depends(get_chat_man
     """Clear the conversation history for a given session."""
     if chat_mgr is None:
         raise HTTPException(status_code=503, detail="Chat service not initialised.")
-    cleared = chat_mgr.clear_session(session_id)
-    if not cleared:
+    try:
+        cleared = chat_mgr.clear_session(session_id)
+        if not cleared:
+            log.warning("Attempted to clear non-existent session", session_id=session_id)
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+        return {"message": f"Session '{session_id}' cleared.", "session_id": session_id}
+    except RagAssistantException as e:
+        log.error("Failed to clear session", session_id=session_id, error=str(e))
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-    return {"message": f"Session '{session_id}' cleared.", "session_id": session_id}
+    
