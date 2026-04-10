@@ -1,8 +1,7 @@
-import tempfile
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from typing import Optional
 
 from api.dependencies import get_faiss_manager
 from api.schemas.document import UploadResponse
@@ -17,7 +16,6 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 config = load_config()
 
-# ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md"}
 ALLOWED_EXTENSIONS = set(config["data"]["allowed_extensions"])
 
 
@@ -31,17 +29,17 @@ async def upload_document(
     Upload a document and ingest it into the vector store.
 
     What happens here:
-    1. The file is saved to a temporary directory.
-    2. DataIngestion loads and splits it into chunks.
-    3. The chunks are embedded and added to (or used to create) the FAISS index.
-    4. You get back a `session_id` to use in your `/chat` calls.
+    1. The file is archived to data_dir/<session_id>/<filename> for durability.
+    2. DataIngestion.load_file() parses the archived file into LangChain documents.
+    3. DataIngestion.chunk_documents() splits them into indexed chunks.
+    4. The chunks are embedded and added to (or used to create) the FAISS index.
+    5. You get back a `session_id` to use in your `/chat` calls.
 
     Supported file types: PDF, TXT, Markdown.
     """
     if faiss_mgr is None:
         raise HTTPException(status_code=503, detail="Document service not initialised.")
 
-    # Validate file extension
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -53,8 +51,7 @@ async def upload_document(
     contents = await file.read()
 
     # Persist the uploaded file to the configured data directory.
-    # This archive survives process restarts and temp-dir cleanups, and is the
-    # canonical copy that can be re-ingested or inspected later.
+    # This archive survives process restarts and is the canonical copy for re-ingestion.
     data_dir = Path(config["data"]["data_dir"])
     session_dir = data_dir / sid
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -62,34 +59,31 @@ async def upload_document(
     archive_path.write_bytes(contents)
     log.info("File archived to session directory", file=file.filename, archive_path=str(archive_path), session_id=sid)
 
-    # Load and index from an isolated temp directory so DataIngestion.load_documents()
-    # only scans this single file and not every previous session under data_dir.
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir) / file.filename
-        tmp_path.write_bytes(contents)
+    try:
+        # DataIngestion is initialised with the root data_dir so its session_path
+        # resolves to the already-created data_dir/sid/ — no new directories are made.
+        data_ingestion = DataIngestion(
+            data_dir=data_dir,
+            faiss_manager=faiss_mgr,
+            session_id=sid,
+        )
 
-        try:
-            data_ingestion = DataIngestion(
-                data_dir=Path(tmp_dir),
-                faiss_manager=faiss_mgr,
-                session_id=sid,
-            )
+        # load_file() targets the single archived file directly — no directory scan.
+        raw_docs = data_ingestion.load_file(archive_path)
+        chunks = data_ingestion.chunk_documents(raw_docs)
 
-            raw_docs = data_ingestion.load_documents()
-            chunks = data_ingestion.chunk_documents(raw_docs)
+        # Add to existing index or create a new one if this is the first upload.
+        if faiss_mgr._exists() and faiss_mgr.vs is not None:
+            added = faiss_mgr.add_documents(chunks)
+        else:
+            faiss_mgr.create(chunks)
+            added = len(chunks)
 
-            # Add to existing index or create a new one if this is the first upload.
-            if faiss_mgr._exists() and faiss_mgr.vs is not None:
-                added = faiss_mgr.add_documents(chunks)
-            else:
-                faiss_mgr.create(chunks)
-                added = len(chunks)
+        log.info("Document ingested", file=file.filename, chunks=added, session_id=sid)
 
-            log.info("Document ingested", file=file.filename, chunks=added, session_id=sid)
-
-        except RagAssistantException as e:
-            log.error("Ingestion failed", file=file.filename, error=str(e))
-            raise HTTPException(status_code=500, detail=str(e.error_message))
+    except RagAssistantException as e:
+        log.error("Ingestion failed", file=file.filename, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e.error_message))
 
     return UploadResponse(
         session_id=sid,

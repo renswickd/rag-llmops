@@ -46,6 +46,38 @@ class DataIngestion:
         self.log.info("DataIngestion initialized", data_dir=str(self.data_dir), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
 
     
+    def load_file(self, file_path: Path) -> List[Document]:
+        """
+        Load a single file and attach standard source metadata to every document.
+
+        Raises RagAssistantException for unsupported extensions or read failures.
+        Used directly by the upload endpoint and internally by load_documents().
+        """
+        file_path = Path(file_path)
+        suffix = file_path.suffix.lower()
+
+        if suffix == ".txt":
+            loader = TextLoader(str(file_path), encoding="utf-8")
+        elif suffix == ".md":
+            loader = UnstructuredMarkdownLoader(str(file_path))
+        elif suffix == ".pdf":
+            loader = PyPDFLoader(str(file_path))
+        else:
+            raise RagAssistantException(f"Unsupported file type: '{suffix}'")
+
+        try:
+            docs = loader.load()
+            for doc in docs:
+                doc.metadata["source"] = str(file_path)
+                doc.metadata["file_name"] = file_path.name
+            self.log.info("File loaded", file=str(file_path), num_docs=len(docs))
+            return docs
+        except RagAssistantException:
+            raise
+        except Exception as e:
+            self.log.error("Failed to load file", file=str(file_path), error=str(e))
+            raise RagAssistantException(f"Failed to load file: {file_path.name}", e)
+
     def load_documents(self) -> List[Document]:
         try:
             documents: List[Document] = []
@@ -61,30 +93,17 @@ class DataIngestion:
                     continue
 
                 suffix = file_path.suffix.lower()
+                if suffix not in {".txt", ".md", ".pdf"}:
+                    self.log.info("Skipping unsupported file", file=str(file_path), suffix=suffix)
+                    continue
 
                 try:
-                    if suffix == ".txt":
-                        loader = TextLoader(str(file_path), encoding="utf-8")
-                    elif suffix == ".md":
-                        loader = UnstructuredMarkdownLoader(str(file_path))
-                    elif suffix == ".pdf":
-                        loader = PyPDFLoader(str(file_path))
-                    else:
-                        self.log.info("Skipping unsupported file", file=str(file_path), suffix=suffix)
-                        continue
-
-                    docs = loader.load()
+                    docs = self.load_file(file_path)
                     archive_path = self.archive_file_in_session_path(file_path)
                     log.info("File loaded and archived", file=str(file_path), archive_path=archive_path, num_docs=len(docs))
-
-                    for doc in docs:
-                        doc.metadata["source"] = str(file_path)
-                        doc.metadata["file_name"] = file_path.name
-
                     documents.extend(docs)
-
-                except Exception as e:
-                    self.log.error("Failed to load file", file=str(file_path), error=str(e))
+                except RagAssistantException as e:
+                    self.log.error("Failed to load file, skipping", file=str(file_path), error=str(e))
 
             self.log.info("Documents loaded successfully", total_docs=len(documents))
             return documents
