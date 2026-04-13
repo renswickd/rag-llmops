@@ -12,3 +12,7 @@ faiss_index/
 .DS_Store
 docs/
 .claude/
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
