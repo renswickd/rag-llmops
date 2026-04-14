@@ -1,121 +1,50 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect } from 'react';
+import { useAppStore } from '@/store/appStore';
+import { Button } from '@/components/ui/button';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const { theme, setTheme, refreshSessions, sessions, error } = useAppStore();
+
+  // Initialise theme from store on first load
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
+
+  // Load sessions from backend on startup
+  useEffect(() => {
+    refreshSessions();
+  }, [refreshSessions]);
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="min-h-screen bg-background text-foreground p-8">
+      <h1 className="text-3xl font-bold mb-4">RAG Assistant</h1>
+      <p className="text-muted-foreground mb-6">Frontend scaffold — Phase 3 builds the full UI.</p>
 
-      <div className="ticks"></div>
+      <div className="flex gap-4 mb-6">
+        <Button onClick={() => setTheme('light')} variant={theme === 'light' ? 'default' : 'outline'}>
+          Light
+        </Button>
+        <Button onClick={() => setTheme('dark')} variant={theme === 'dark' ? 'default' : 'outline'}>
+          Dark
+        </Button>
+      </div>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
+      {error && (
+        <div className="bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 rounded p-4 mb-4">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <h2 className="text-xl font-semibold mb-2">Active Sessions</h2>
+        {sessions.length === 0 ? (
+          <p className="text-muted-foreground">No sessions yet. Upload a document via the API to create one.</p>
+        ) : (
+          <ul className="list-disc pl-5">
+            {sessions.map((s) => <li key={s} className="font-mono text-sm">{s}</li>)}
           </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        )}
+      </div>
+    </div>
+  );
 }
-
-export default App
