@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useAppStore } from '@/store/appStore';
-import type { Theme } from '@/types';
 
 export function useTheme() {
   const theme = useAppStore((s) => s.theme);
