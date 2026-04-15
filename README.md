@@ -22,7 +22,7 @@ This is a learning project intended to be shared with others for testing.
 ## Architecture
 
 ```
-frontend/          React + Vite + TailwindCSS (Phase 2 — in progress)
+frontend/          React + Vite + TypeScript + TailwindCSS + shadcn/ui (Phase 3 complete)
 api/               FastAPI application
   routers/         chat, documents, health endpoints
   schemas/         Pydantic request/response models
@@ -53,13 +53,16 @@ docs/              plan.md — implementation roadmap
 | Logging | structlog (structured JSON) |
 | Config | YAML + python-dotenv |
 
-### Frontend (planned — Phase 2)
+### Frontend
 | Component | Technology |
 |-----------|-----------|
-| UI library | React 19 + Vite + TypeScript |
-| Styling | TailwindCSS + shadcn/ui |
-| State | Zustand |
+| UI library | React 19 + Vite 8 + TypeScript 6 |
+| Styling | TailwindCSS 4 (CSS-first) + shadcn/ui |
+| Components | Radix UI primitives via shadcn/ui |
+| State | Zustand 5 with persist middleware |
 | Markdown rendering | react-markdown + remark-gfm |
+| File upload | react-dropzone |
+| Icons | lucide-react |
 
 ### Deployment (planned — Phase 5–6)
 | Component | Technology |
@@ -113,6 +116,7 @@ Ask question
 ### Prerequisites
 
 - Python 3.13
+- Node.js 20+ and npm
 - A [Groq API key](https://console.groq.com/)
 - A [HuggingFace token](https://huggingface.co/settings/tokens)
 
@@ -122,9 +126,13 @@ Ask question
 git clone <repo-url>
 cd rag-llmops-2
 
+# Backend
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+# Frontend
+cd frontend && npm install && cd ..
 ```
 
 ### Configure
@@ -144,18 +152,34 @@ CORS_ORIGINS=http://localhost:5173
 
 All other parameters (model names, chunk size, retrieval settings) are in `config/config.yaml`.
 
-### Run
+### Run (development)
+
+Open two terminals:
 
 ```bash
+# Terminal 1 — FastAPI backend
 python run.py
-# Server starts at http://localhost:8000
+# API available at http://localhost:8000
+# Interactive docs at http://localhost:8000/docs
 ```
+
+```bash
+# Terminal 2 — React frontend (Vite dev server)
+cd frontend && npm run dev
+# UI available at http://localhost:5173
+```
+
+The Vite dev server proxies `/api` requests to `localhost:8000`, so CORS is not an issue in development.
 
 ### Test
 
 ```bash
+# Backend
 pytest tests/ -v
 # 73 tests, all passing
+
+# Frontend build check
+cd frontend && npm run build
 ```
 
 ---
@@ -199,8 +223,8 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 2 | Frontend scaffold (React + Vite + Tailwind + shadcn/ui + Zustand) | Pending |
-| 3 | Core UI components (chat, document upload, session management, dark mode) | Pending |
+| 2 | Frontend scaffold (React 19 + Vite 8 + TypeScript 6 + Tailwind v4 + shadcn/ui + Zustand) | Done |
+| 3 | Core UI components (two-panel chat, drag-and-drop upload, session management, dark/light mode, markdown rendering, source citations) | Done |
 | 4 | Frontend testing (Vitest unit + Playwright E2E) | Pending |
 
 ### Deployment
@@ -243,9 +267,21 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 │   └── exceptions.py        # RagAssistantException
 ├── config/
 │   └── config.yaml
+├── frontend/
+│   ├── src/
+│   │   ├── api/client.ts    # Typed fetch wrapper for all backend endpoints
+│   │   ├── store/appStore.ts # Zustand store (sessions, messages, theme)
+│   │   ├── types/index.ts   # TypeScript interfaces mirroring Pydantic schemas
+│   │   ├── hooks/useTheme.ts # Dark/light mode hook
+│   │   └── components/      # Layout, Header, Sidebar, ChatArea, MessageBubble,
+│   │                        #   ChatInput, DocumentUpload, SessionList, …
+│   ├── vite.config.ts       # Tailwind plugin + @/ alias + /api proxy
+│   └── package.json
 ├── tests/                   # 73 pytest unit tests
 ├── docs/
-│   └── plan.md              # Full implementation roadmap
+│   ├── plan.md              # Full implementation roadmap
+│   ├── section_6_2_plan.md  # Phase 2 detailed implementation guide
+│   └── section_6_3_plan.md  # Phase 3 detailed implementation guide
 ├── run.py                   # Entry point
 ├── .env.example
 └── requirements.txt
