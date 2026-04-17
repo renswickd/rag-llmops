@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.dependencies import get_chat_manager
+from api.dependencies import get_chat_manager, get_session_registry
 from api.schemas.chat import ChatRequest, ChatResponse
 from conversation.chat_manager import ChatManager
 from core.exceptions import RagAssistantException
+from core.session_store import SessionRegistry
 from core.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -40,18 +41,20 @@ def chat(request: ChatRequest, chat_mgr: ChatManager = Depends(get_chat_manager)
 
 
 @router.get("/sessions")
-def list_sessions(chat_mgr: ChatManager = Depends(get_chat_manager)):
+def list_sessions(chat_mgr: ChatManager = Depends(get_chat_manager), session_registry: SessionRegistry = Depends(get_session_registry)):
     """List all active conversation session IDs."""
     if chat_mgr is None:
         raise HTTPException(status_code=503, detail="Chat service not initialised.")
+    if session_registry is None:
+        raise HTTPException(status_code=503, detail="Session registry not initialised.")
     
     try:
-        sessions = chat_mgr.list_sessions()
-        log.info("Listed sessions", count=len(sessions), sessions=sessions)
+        sessions = [s["session_id"] for s in session_registry.list_sessions()]
+        log.info("Listed sessions", count=len(sessions))
         return {"sessions": sessions}
-    except RagAssistantException as e:
+    except Exception as e:
         log.error("Failed to list sessions", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e.error_message))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/sessions/{session_id}")
