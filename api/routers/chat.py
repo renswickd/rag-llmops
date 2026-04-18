@@ -77,6 +77,9 @@ def delete_session(
     3. Rebuild the FAISS index from remaining sessions
     4. Clear conversation history from memory
     """
+    if chat_mgr is None or registry is None or faiss_mgr is None:
+        raise HTTPException(status_code=503, detail="Chat service not initialised.")
+
     if not registry.exists(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 

@@ -66,7 +66,7 @@ class Retriever:
 
         self._require_vs()
         k = top_k or self.top_k
-        filter_dict = {"session_id": session_id} if session_id else {}
+        filter_dict = {"session_id": session_id} if session_id else None
  
         try:
             if self.search_type == "similarity":

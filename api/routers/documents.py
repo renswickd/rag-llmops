@@ -39,7 +39,7 @@ async def upload_document(
 
     Supported file types: PDF, TXT, Markdown.
     """
-    if faiss_mgr is None:
+    if faiss_mgr is None or session_registry is None:
         raise HTTPException(status_code=503, detail="Document service not initialised.")
 
     suffix = Path(file.filename).suffix.lower()
@@ -62,14 +62,11 @@ async def upload_document(
     log.info("File archived to session directory", file=file.filename, archive_path=str(archive_path), session_id=sid)
 
     try:
-        # DataIngestion is initialised with the root data_dir so its session_path
-        # resolves to the already-created data_dir/sid/ — no new directories are made.
         data_ingestion = DataIngestion(
             data_dir=session_dir,
             faiss_manager=faiss_mgr,
             session_id=sid,
         )
-        raw_docs = data_ingestion.load_file(archive_path)
 
         # load_file() targets the single archived file directly — no directory scan.
         raw_docs = data_ingestion.load_file(archive_path)
