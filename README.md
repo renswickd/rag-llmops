@@ -11,6 +11,8 @@ The goal of this project is to build and deploy a full-stack RAG application tha
 - Clean backend architecture with FastAPI and dependency injection
 - A real document ingestion pipeline (PDF/TXT/MD → chunks → embeddings → FAISS)
 - Multi-turn conversational retrieval with question condensing
+- Per-session document isolation — each session only retrieves from its own documents
+- Persistent conversation history that survives backend restarts
 - A modern React frontend with dark/light mode and session management
 - Containerised deployment on Azure Container Instances
 - LLMOps practices: structured logging, configuration management, and automated testing
@@ -22,19 +24,23 @@ This is a learning project intended to be shared with others for testing.
 ## Architecture
 
 ```
-frontend/          React + Vite + TypeScript + TailwindCSS + shadcn/ui (Phase 3 complete)
+frontend/          React + Vite + TypeScript + TailwindCSS + shadcn/ui
 api/               FastAPI application
   routers/         chat, documents, health endpoints
   schemas/         Pydantic request/response models
   dependencies.py  Service singleton initialisation
   main.py          App entry point with lifespan management
-conversation/      Multi-turn chat manager and RAG prompts
+conversation/      Multi-turn chat manager with JSONL history persistence
 ingestion/         Document loading, chunking, FAISS vector store, retriever
-utils/             LLM and embeddings model loader
-core/              Config loader, structured logging, custom exceptions
+core/              Config loader, structured logging, custom exceptions, session registry
+utils/             LLM and embeddings model loader, session ID generation
 config/            config.yaml — all tunable parameters
-tests/             pytest unit test suite (73 tests)
-docs/              plan.md — implementation roadmap
+data/
+  uploads/         Archived uploaded files, namespaced by session_id
+  history/         Per-session conversation history as JSONL files
+  session_registry.json  Authoritative session list with metadata
+tests/             pytest unit test suite
+docs/              Implementation plans and roadmaps
 ```
 
 ---
@@ -81,12 +87,42 @@ All endpoints are prefixed `/api/v1/`.
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check — returns app name, version, environment |
-| `POST` | `/documents/upload` | Upload a `.pdf`, `.txt`, or `.md` file; returns `session_id` and `chunks_created` |
+| `POST` | `/documents/upload` | Upload a `.pdf`, `.txt`, or `.md` file; returns `session_id`, `file_name`, and `chunks_created` |
 | `POST` | `/chat` | Send a question with a `session_id`; returns answer, sources, and conversation metadata |
-| `GET` | `/chat/sessions` | List all active session IDs |
-| `DELETE` | `/chat/sessions/{session_id}` | Clear conversation history for a session |
+| `GET` | `/chat/sessions` | List all sessions with full metadata (`session_id`, `created_at`, `documents[]`) |
+| `DELETE` | `/chat/sessions/{session_id}` | Fully delete a session: registry, uploaded files, FAISS entries, and chat history |
+| `GET` | `/chat/sessions/{session_id}/history` | Return stored conversation history for re-hydration after a page refresh |
 
 Interactive docs available at `http://localhost:8000/docs` when running locally.
+
+---
+
+## Session Model
+
+Each document upload creates a **session** — the shared key linking files, conversation history, and FAISS vectors.
+
+```
+session_id format:  upload_YYYYMMDD_HHMMSS_<8hex>
+e.g.                upload_20260418_143022_a3f9c1b7
+```
+
+Sessions are tracked in a **session registry** (`data/session_registry.json`) written at upload time — not at first chat — so `GET /chat/sessions` always reflects all uploaded documents immediately.
+
+### Document isolation
+
+Each uploaded document's chunks are tagged with their `session_id` in FAISS metadata. The retriever filters by `session_id` at query time, so Session A can never return chunks from Session B's documents.
+
+### History persistence
+
+Conversation turns are appended to `data/history/<session_id>.jsonl` after each chat response. On backend startup, all JSONL files are scanned and loaded back into memory. Deleting a session removes the JSONL file.
+
+### Full delete
+
+`DELETE /chat/sessions/{session_id}` performs a complete teardown:
+1. Remove from the session registry
+2. Delete `data/uploads/<session_id>/` from disk
+3. Rebuild the FAISS index from the remaining sessions
+4. Clear the in-memory chat history
 
 ---
 
@@ -94,18 +130,21 @@ Interactive docs available at `http://localhost:8000/docs` when running locally.
 
 ```
 Upload file
-    └── Archive to data/<session_id>/<filename>
+    └── Generate session_id (upload_YYYYMMDD_HHMMSS_<8hex>)
+    └── Archive to data/uploads/<session_id>/<filename>
+    └── Write session metadata to session_registry.json
     └── Parse (PDF / TXT / MD)
     └── Chunk (RecursiveCharacterTextSplitter, 1000 chars / 150 overlap)
+    └── Tag each chunk with session_id in metadata
     └── Embed (HuggingFace google/embeddinggemma-300m)
-    └── Store in FAISS index (faiss_index/)
+    └── Add to FAISS index (faiss_index/)
 
 Ask question
     └── Condense follow-up into standalone query (Groq LLM)
-    └── Retrieve top-k documents (similarity / MMR / score-threshold)
+    └── Retrieve top-k documents filtered by session_id (similarity / MMR / score-threshold)
     └── Format context with source citations
     └── Generate grounded answer (Groq LLM)
-    └── Persist turn to in-memory session history
+    └── Append human + AI turn to data/history/<session_id>.jsonl
     └── Return answer + sources + history length
 ```
 
@@ -171,12 +210,13 @@ cd frontend && npm run dev
 
 The Vite dev server proxies `/api` requests to `localhost:8000`, so CORS is not an issue in development.
 
+> **Note:** The backend does not serve the frontend UI. Set `SERVE_FRONTEND=true` only in single-container production deployments where `frontend/dist` is present.
+
 ### Test
 
 ```bash
 # Backend
 pytest tests/ -v
-# 73 tests, all passing
 
 # Frontend build check
 cd frontend && npm run build
@@ -193,6 +233,9 @@ Key settings in `config/config.yaml`:
 | `llm.groq` | `model_name` | `openai/gpt-oss-20b` | Groq model |
 | `llm.groq` | `max_history_turns` | `10` | Sliding window for conversation history |
 | `embedding_model` | `model_name` | `google/embeddinggemma-300m` | HuggingFace embedding model |
+| `data` | `data_dir` | `data` | Root directory for uploads, history, and registry |
+| `data` | `history_dir` | `data/history` | Directory for per-session JSONL history files |
+| `data` | `uploads_subdir` | `uploads` | Sub-directory under `data_dir` for archived files |
 | `data_ingestion` | `chunk_size` | `1000` | Characters per chunk |
 | `data_ingestion` | `chunk_overlap` | `150` | Overlap between chunks |
 | `retriever` | `default_search_type` | `similarity` | `similarity`, `mmr`, or `similarity_score_threshold` |
@@ -210,21 +253,27 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 |-----------|---------|--------|
 | Core infrastructure | YAML config loader, structlog JSON logging, `RagAssistantException` with traceback capture | Done |
 | Model loader | Groq `ChatGroq` LLM + HuggingFace `HuggingFaceEmbeddings` initialisation with config-driven parameters | Done |
-| Document ingestion | Load PDF / TXT / MD via LangChain loaders, archive to `data/<session_id>/`, chunk with `RecursiveCharacterTextSplitter` (1000 chars / 150 overlap) | Done |
-| FAISS vector store | Create, load, and update FAISS index; persist to disk; validate and filter empty documents | Done |
-| Retrieval pipeline | Three search modes: `similarity`, `mmr` (diversity-aware), `similarity_score_threshold`; configurable `top_k`, `fetch_k`, `lambda_mult` | Done |
-| Conversation chain | `StatefulChatManager` with per-session `InMemoryChatMessageHistory`, sliding window (configurable turns), standalone question condensing via LangChain LCEL chain | Done |
-| RAG prompts | System prompt enforcing grounded answers with source citations; standalone condense prompt for follow-up reformulation | Done |
+| Document ingestion | Load PDF / TXT / MD via LangChain loaders, archive to `data/uploads/<session_id>/`, chunk with `RecursiveCharacterTextSplitter` | Done |
+| FAISS vector store | Create, load, update, and clear FAISS index; persist to disk; per-session chunk metadata | Done |
+| Session registry | `core/session_store.py` — JSON-backed registry written at upload time; returned by `list_sessions`; cleaned up on delete | Done |
+| Retrieval pipeline | Three search modes: `similarity`, `mmr`, `similarity_score_threshold`; per-session filtering via chunk metadata | Done |
+| Conversation chain | `ChatManager` with per-session `InMemoryChatMessageHistory`, sliding window, standalone question condensing via LangChain LCEL | Done |
+| History persistence | Turns appended to `data/history/<session_id>.jsonl`; loaded on startup; deleted with session | Done |
+| History endpoint | `GET /chat/sessions/{session_id}/history` — returns stored turns for frontend re-hydration | Done |
+| Session metadata API | `GET /chat/sessions` returns `SessionMetadata[]` with `session_id`, `created_at`, `documents[]` | Done |
+| Full session delete | `DELETE /chat/sessions/{session_id}` — registry + files + FAISS rebuild + history | Done |
 | API layer | FastAPI routers for `chat`, `documents`, `health`; Pydantic schemas; singleton dependency injection; lifespan startup/shutdown | Done |
-| CORS + static serving | `CORSMiddleware` with env-configurable origins; conditional static file mount for production single-container deploy | Done |
-| Unit tests | 73 pytest tests covering all layers — config, exceptions, logging, model loader, ingestion, retrieval, chat manager, and all API endpoints | Done |
+| CORS + static serving | `CORSMiddleware` with env-configurable origins; `SERVE_FRONTEND=true` guard for production static file mount | Done |
+| Unit tests | pytest tests covering all layers — config, exceptions, logging, model loader, ingestion, retrieval, chat manager, and all API endpoints | Done |
 
 ### Frontend
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 2 | Frontend scaffold (React 19 + Vite 8 + TypeScript 6 + Tailwind v4 + shadcn/ui + Zustand) | Done |
-| 3 | Core UI components (two-panel chat, drag-and-drop upload, session management, dark/light mode, markdown rendering, source citations) | Done |
+| 3 | Core UI components (two-panel chat, drag-and-drop upload, dark/light mode, markdown rendering, source citations) | Done |
+| 3+ | Session management with full `SessionMetadata` — sidebar shows document names and dates; header dropdown uses document names; Zustand store updated to `SessionMetadata[]` | Done |
+| 3+ | History re-hydration on page refresh — `switchSession` fetches backend history if no messages are cached; loading spinner shown during fetch | Done |
 | 4 | Frontend testing (Vitest unit + Playwright E2E) | Pending |
 
 ### Deployment
@@ -242,46 +291,51 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 ```
 .
 ├── api/
-│   ├── main.py              # FastAPI app + CORS + static file serving
-│   ├── dependencies.py      # Service singleton initialisation
+│   ├── main.py              # FastAPI app + CORS + conditional static file serving
+│   ├── dependencies.py      # Service singleton initialisation (ChatManager, SessionRegistry, FaissManager)
 │   ├── routers/
-│   │   ├── chat.py
-│   │   ├── documents.py
+│   │   ├── chat.py          # POST /chat, GET/DELETE /sessions, GET /sessions/{id}/history
+│   │   ├── documents.py     # POST /documents/upload
 │   │   └── health.py
 │   └── schemas/
-│       ├── chat.py          # ChatRequest, ChatResponse
+│       ├── chat.py          # ChatRequest, ChatResponse, SessionMetadata, SessionListResponse, HistoryResponse
 │       └── document.py      # UploadResponse
 ├── conversation/
-│   ├── chat_manager.py      # StatefulChatManager with session history
+│   ├── chat_manager.py      # ChatManager: sessions, JSONL persistence, history load/clear
 │   └── prompt_builder.py    # RAG and condense prompts
 ├── ingestion/
-│   ├── data_ingestion.py    # Load, chunk, archive files
-│   ├── faiss_manager.py     # FAISS index lifecycle
-│   └── retriever.py         # Similarity / MMR / threshold retrieval
-├── utils/
-│   ├── model_loader.py      # Groq LLM + HuggingFace embeddings
-│   └── file_handling.py     # Session ID generation
+│   ├── data_ingestion.py    # Load, chunk, archive files; injects session_id into chunk metadata
+│   ├── faiss_manager.py     # FAISS index lifecycle (create, load, add, clear)
+│   └── retriever.py         # Similarity / MMR / threshold retrieval with session_id filter
 ├── core/
+│   ├── session_store.py     # SessionRegistry — JSON-backed session metadata store
 │   ├── config.py            # YAML config loader
 │   ├── logging_config.py    # structlog setup
 │   └── exceptions.py        # RagAssistantException
+├── utils/
+│   ├── model_loader.py      # Groq LLM + HuggingFace embeddings
+│   └── file_handling.py     # Session ID generation (flat URL-safe format)
 ├── config/
 │   └── config.yaml
+├── data/
+│   ├── uploads/             # Archived files per session (data/uploads/<session_id>/)
+│   ├── history/             # JSONL conversation history per session
+│   └── session_registry.json
 ├── frontend/
 │   ├── src/
 │   │   ├── api/client.ts    # Typed fetch wrapper for all backend endpoints
-│   │   ├── store/appStore.ts # Zustand store (sessions, messages, theme)
+│   │   ├── store/appStore.ts # Zustand store (SessionMetadata[], messages, hydration state, theme)
 │   │   ├── types/index.ts   # TypeScript interfaces mirroring Pydantic schemas
-│   │   ├── hooks/useTheme.ts # Dark/light mode hook
-│   │   └── components/      # Layout, Header, Sidebar, ChatArea, MessageBubble,
-│   │                        #   ChatInput, DocumentUpload, SessionList, …
+│   │   └── components/      # Layout, Header, Sidebar, ChatArea, MessageList,
+│   │                        #   ChatInput, DocumentUpload, SessionList, ThemeToggle
 │   ├── vite.config.ts       # Tailwind plugin + @/ alias + /api proxy
 │   └── package.json
-├── tests/                   # 73 pytest unit tests
+├── tests/                   # pytest unit tests
 ├── docs/
 │   ├── plan.md              # Full implementation roadmap
-│   ├── section_6_2_plan.md  # Phase 2 detailed implementation guide
-│   └── section_6_3_plan.md  # Phase 3 detailed implementation guide
+│   ├── fix_session_plan.md  # Session gap analysis and Phase A–D roadmap
+│   ├── fix_session_plan_a.md # Phase A implementation guide (session foundation)
+│   └── fix_session_plan_bc.md # Phase B+C implementation guide (persistence + metadata UX)
 ├── run.py                   # Entry point
 ├── .env.example
 └── requirements.txt
