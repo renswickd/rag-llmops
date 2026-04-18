@@ -96,7 +96,7 @@ class ChatManager:
             standalone_q = self._condense(question, chat_history)
  
             # 2. Retrieve relevant context
-            docs = self.retriever.retrieve(standalone_q, top_k=top_k)
+            docs = self.retriever.retrieve(standalone_q, top_k=top_k, session_id=session_id)
             context = format_docs(docs)
  
             # 3. Generate grounded answer

@@ -62,18 +62,19 @@ class Retriever:
                 "Call Retriever.initialize() or FaissManager.load() / create() first."
             )
             
-    def retrieve(self, query: str, top_k: Optional[int] = None) -> List[Document]:
+    def retrieve(self, query: str, top_k: Optional[int] = None, session_id: Optional[str] = None) -> List[Document]:
 
         self._require_vs()
         k = top_k or self.top_k
+        filter_dict = {"session_id": session_id} if session_id else {}
  
         try:
             if self.search_type == "similarity":
-                results = self._similarity_search(query, k)
+                results = self._similarity_search(query, k, filter_dict)
             elif self.search_type == "mmr":
-                results = self._mmr_search(query, k)
+                results = self._mmr_search(query, k, filter_dict)
             elif self.search_type == "similarity_score_threshold":
-                results = self._similarity_search_with_threshold(query, k)
+                results = self._similarity_search_with_threshold(query, k, filter_dict)
             else:
                 raise RagAssistantException(f"Unknown search_type: {self.search_type}")
  
@@ -137,23 +138,24 @@ class Retriever:
     # ----------------
     # Helper Functions
     # ----------------
-    def _similarity_search(self, query: str, k: int) -> List[Document]:
-        return self.faiss_manager.vs.similarity_search(query, k=k)
+    def _similarity_search(self, query: str, k: int, filter_dict: Optional[dict] = None) -> List[Document]:
+        return self.faiss_manager.vs.similarity_search(query, k=k, filter=filter_dict)
  
-    def _mmr_search(self, query: str, k: int) -> List[Document]:
+    def _mmr_search(self, query: str, k: int, filter_dict: Optional[dict] = None) -> List[Document]:
         return self.faiss_manager.vs.max_marginal_relevance_search(
             query,
             k=k,
             fetch_k=self.fetch_k,
             lambda_mult=self.lambda_mult,
+            filter=filter_dict,
         )
  
-    def _similarity_search_with_threshold(self, query: str, k: int) -> List[Document]:
+    def _similarity_search_with_threshold(self, query: str, k: int, filter_dict: Optional[dict] = None) -> List[Document]:
         if self.score_threshold is None:
             raise RagAssistantException(
                 "score_threshold must be set when using search_type='similarity_score_threshold'."
             )
-        pairs = self.faiss_manager.vs.similarity_search_with_score(query, k=k)
+        pairs = self.faiss_manager.vs.similarity_search_with_score(query, k=k, filter=filter_dict)
         # FAISS returns L2 distances (lower = more similar). Convert to a
         # relevance-like score via 1 / (1 + distance) for threshold comparison.
         filtered = [
