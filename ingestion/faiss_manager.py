@@ -100,6 +100,20 @@ class FaissManager:
 
         return valid_docs
     
+    def clear(self) -> None:
+        """
+        Discard the in-memory vector store and delete the index files from disk.
+        Call this before a full index rebuild.
+        """
+        self.vs = None
+        index_faiss = self.index_dir / "index.faiss"
+        index_pkl = self.index_dir / "index.pkl"
+        if index_faiss.exists():
+            index_faiss.unlink()
+        if index_pkl.exists():
+            index_pkl.unlink()
+        self.log.info("FAISS index cleared", index_dir=str(self.index_dir))
+        
 if __name__ == "__main__":
     from langchain_core.documents import Document
     docs = [Document(page_content="This is a test document.", metadata={"source": "test1.txt"})]

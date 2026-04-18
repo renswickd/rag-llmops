@@ -3,10 +3,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 
-from api.dependencies import get_faiss_manager
+from api.dependencies import get_faiss_manager, get_session_registry
 from api.schemas.document import UploadResponse
 from ingestion.faiss_manager import FaissManager
 from ingestion.data_ingestion import DataIngestion
+from core.session_store import SessionRegistry
 from core.config import load_config
 from core.exceptions import RagAssistantException
 from core.logging_config import get_logger
@@ -24,6 +25,7 @@ async def upload_document(
     file: UploadFile = File(..., description="PDF, TXT, or MD file to ingest"),
     session_id: Optional[str] = Form(None, description="Reuse an existing session or leave blank to create a new one"),
     faiss_mgr: FaissManager = Depends(get_faiss_manager),
+    session_registry: SessionRegistry = Depends(get_session_registry),
 ):
     """
     Upload a document and ingest it into the vector store.
@@ -37,7 +39,7 @@ async def upload_document(
 
     Supported file types: PDF, TXT, Markdown.
     """
-    if faiss_mgr is None:
+    if faiss_mgr is None or session_registry is None:
         raise HTTPException(status_code=503, detail="Document service not initialised.")
 
     suffix = Path(file.filename).suffix.lower()
@@ -53,17 +55,15 @@ async def upload_document(
     # Persist the uploaded file to the configured data directory.
     # This archive survives process restarts and is the canonical copy for re-ingestion.
     data_dir = Path(config["data"]["data_dir"])
-    session_dir = data_dir / sid
+    session_dir = data_dir / "uploads" / sid      # data/uploads/<session_id>/
     session_dir.mkdir(parents=True, exist_ok=True)
     archive_path = session_dir / file.filename
     archive_path.write_bytes(contents)
     log.info("File archived to session directory", file=file.filename, archive_path=str(archive_path), session_id=sid)
 
     try:
-        # DataIngestion is initialised with the root data_dir so its session_path
-        # resolves to the already-created data_dir/sid/ — no new directories are made.
         data_ingestion = DataIngestion(
-            data_dir=data_dir,
+            data_dir=session_dir,
             faiss_manager=faiss_mgr,
             session_id=sid,
         )
@@ -78,6 +78,12 @@ async def upload_document(
         else:
             faiss_mgr.create(chunks)
             added = len(chunks)
+
+        session_registry.register(
+            session_id=sid,
+            file_name=file.filename,
+            chunks_created=added,
+        )
 
         log.info("Document ingested", file=file.filename, chunks=added, session_id=sid)
         

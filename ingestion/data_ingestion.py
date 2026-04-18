@@ -124,7 +124,15 @@ class DataIngestion:
 
             chunked_docs = splitter.split_documents(docs)
 
-            self.log.info("Documents chunked successfully",original_docs=len(docs), chunked_docs=len(chunked_docs), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap,)
+            for chunk in chunked_docs:
+                chunk.metadata["session_id"] = self.session_id
+
+            self.log.info("Documents chunked successfully",
+                        original_docs=len(docs),
+                        chunked_docs=len(chunked_docs),
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                        session_id=self.session_id)
             return chunked_docs
 
         except Exception as e:

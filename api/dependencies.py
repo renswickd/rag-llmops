@@ -15,6 +15,7 @@ from typing import Optional
 
 from core.config import load_config
 from core.logging_config import get_logger
+from core.session_store import SessionRegistry
 from utils.model_loader import ModelLoader
 from ingestion.faiss_manager import FaissManager
 from ingestion.retriever import Retriever
@@ -28,6 +29,7 @@ _model_loader: Optional[ModelLoader] = None
 _faiss_manager: Optional[FaissManager] = None
 _retriever: Optional[Retriever] = None
 _chat_manager: Optional[ChatManager] = None
+_session_registry: Optional[SessionRegistry] = None
 
 
 def init_services() -> None:
@@ -35,11 +37,12 @@ def init_services() -> None:
     Called once when the FastAPI app starts up.
     Builds the full service chain: ModelLoader → FaissManager → Retriever → ChatManager.
     """
-    global _model_loader, _faiss_manager, _retriever, _chat_manager
+    global _model_loader, _faiss_manager, _retriever, _chat_manager, _session_registry
 
     log.info("Initializing services...")
 
     index_dir = Path(config["api"]["index_dir"])
+    data_dir = Path(config["data"]["data_dir"])
 
     _model_loader = ModelLoader()
 
@@ -56,6 +59,8 @@ def init_services() -> None:
         log.warning("No existing FAISS index found — upload a document to get started", index_dir=str(index_dir))
 
     _chat_manager = ChatManager(retriever=_retriever)
+
+    _session_registry = SessionRegistry(data_dir=data_dir)
 
     log.info("All services initialized successfully")
 
@@ -76,3 +81,6 @@ def get_faiss_manager() -> FaissManager:
 
 def get_retriever() -> Retriever:
     return _retriever
+
+def get_session_registry() -> SessionRegistry:
+    return _session_registry
