@@ -55,9 +55,11 @@ def test_chat_success(
     assert result["standalone_q"] == "What is RAG?"
     assert result["sources"] == [{"source": "rag.txt"}]
 
+    # Phase A: session_id is now forwarded to the retriever for per-session filtering
     mock_retriever.retrieve.assert_called_once_with(
         "What is RAG?",
         top_k=None,
+        session_id="test-session",
     )
 
 

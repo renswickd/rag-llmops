@@ -2,10 +2,10 @@
 Unit tests for POST /documents/upload
 
 Medium-level coverage: HTTP contract, FAISS branch selection (create vs add),
-file archival, session-ID handling, and error propagation.
+file archival, session registry, session-ID handling, and error propagation.
 
 The FastAPI app is built inline per-test so the real lifespan / init_services
-is never triggered.  All heavy I/O (DataIngestion, FAISS) is mocked.
+is never triggered.  All heavy I/O (DataIngestion, FAISS, SessionRegistry) is mocked.
 """
 import io
 import pytest
@@ -64,14 +64,22 @@ def mock_faiss():
 
 
 @pytest.fixture
-def client(mock_faiss):
-    """Minimal FastAPI app with only the documents router; FAISS dep overridden."""
+def mock_registry():
+    """Stub SessionRegistry — no real file I/O."""
+    m = MagicMock()
+    return m
+
+
+@pytest.fixture
+def client(mock_faiss, mock_registry):
+    """Minimal FastAPI app with only the documents router; all deps overridden."""
     from api.routers.documents import router
-    from api.dependencies import get_faiss_manager
+    from api.dependencies import get_faiss_manager, get_session_registry
 
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss
+    app.dependency_overrides[get_session_registry] = lambda: mock_registry
     return TestClient(app)
 
 
@@ -148,15 +156,17 @@ def test_upload_archives_file_to_session_directory(client, mock_faiss, stub_pipe
     resp = upload(client, filename="report.pdf", content=content)
 
     assert resp.status_code == 200
-    archived = tmp_path / FAKE_SESSION_ID / "report.pdf"
-    assert archived.exists(), "File must be persisted to the session directory"
+    # Phase A: files are now stored under uploads/<session_id>/
+    archived = tmp_path / "uploads" / FAKE_SESSION_ID / "report.pdf"
+    assert archived.exists(), "File must be persisted under data/uploads/<session_id>/"
     assert archived.read_bytes() == content
 
 
-def test_load_file_called_with_archive_path(client, mock_faiss, stub_pipeline, tmp_path):
+def test_load_file_called_once_with_archive_path(client, mock_faiss, stub_pipeline, tmp_path):
+    """load_file must be called exactly once — not duplicated."""
     upload(client, filename="doc.pdf")
 
-    expected_path = tmp_path / FAKE_SESSION_ID / "doc.pdf"
+    expected_path = tmp_path / "uploads" / FAKE_SESSION_ID / "doc.pdf"
     stub_pipeline.load_file.assert_called_once_with(expected_path)
 
 
@@ -164,6 +174,36 @@ def test_chunk_documents_called_with_raw_docs(client, mock_faiss, stub_pipeline)
     upload(client)
 
     stub_pipeline.chunk_documents.assert_called_once_with(FAKE_DOCS)
+
+
+# ─────────────────────────────────────────────
+# Session registry integration
+# ─────────────────────────────────────────────
+
+def test_registry_called_on_successful_upload(client, mock_faiss, stub_pipeline, mock_registry):
+    mock_faiss._exists.return_value = False
+
+    upload(client, filename="report.pdf")
+
+    mock_registry.register.assert_called_once_with(
+        session_id=FAKE_SESSION_ID,
+        file_name="report.pdf",
+        chunks_created=len(FAKE_CHUNKS),
+    )
+
+
+def test_registry_called_with_add_count_when_index_exists(client, mock_faiss, stub_pipeline, mock_registry):
+    mock_faiss._exists.return_value = True
+    mock_faiss.vs = MagicMock()
+    mock_faiss.add_documents.return_value = 3
+
+    upload(client, filename="extra.txt")
+
+    mock_registry.register.assert_called_once_with(
+        session_id=FAKE_SESSION_ID,
+        file_name="extra.txt",
+        chunks_created=3,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -201,13 +241,32 @@ def test_rejects_disallowed_file_extensions(client, filename):
     assert "Unsupported file type" in resp.json()["detail"]
 
 
-def test_returns_503_when_faiss_manager_is_none():
+def test_returns_503_when_faiss_manager_is_none(mock_registry):
     from api.routers.documents import router
-    from api.dependencies import get_faiss_manager
+    from api.dependencies import get_faiss_manager, get_session_registry
 
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_faiss_manager] = lambda: None
+    app.dependency_overrides[get_session_registry] = lambda: mock_registry
+
+    resp = TestClient(app).post(
+        "/documents/upload",
+        files={"file": ("doc.pdf", io.BytesIO(b"bytes"), "application/octet-stream")},
+    )
+
+    assert resp.status_code == 503
+    assert "not initialised" in resp.json()["detail"]
+
+
+def test_returns_503_when_registry_is_none(mock_faiss):
+    from api.routers.documents import router
+    from api.dependencies import get_faiss_manager, get_session_registry
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss
+    app.dependency_overrides[get_session_registry] = lambda: None
 
     resp = TestClient(app).post(
         "/documents/upload",
