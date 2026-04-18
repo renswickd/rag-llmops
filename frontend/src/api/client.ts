@@ -1,4 +1,4 @@
-import type { ChatResponse, UploadResponse, HistoryMessage } from '@/types';
+import type { ChatResponse, UploadResponse, HistoryMessage, SessionMetadata } from '@/types';
 
 // Reads from .env.local in dev, .env.production in build
 // Falls back to /api/v1 if not set (works with Vite proxy and single-container deploy)
@@ -42,7 +42,7 @@ export const api = {
     }),
 
   listSessions: () =>
-    request<{ sessions: string[] }>(`${API_BASE}/chat/sessions`),
+    request<{ sessions: SessionMetadata[] }>(`${API_BASE}/chat/sessions`),
 
   deleteSession: (sessionId: string) =>
     request<{ message: string }>(`${API_BASE}/chat/sessions/${sessionId}`, {

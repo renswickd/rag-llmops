@@ -10,8 +10,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { MessageSquare, Trash2, Plus } from 'lucide-react';
+import { MessageSquare, Trash2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { SessionMetadata } from '@/types';
+
+function sessionLabel(meta: SessionMetadata): string {
+  if (meta.documents.length === 0) return 'No documents';
+  if (meta.documents.length === 1) return meta.documents[0].file_name;
+  return `${meta.documents[0].file_name} +${meta.documents.length - 1}`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 export function SessionList() {
   const sessions = useAppStore((s) => s.sessions);
@@ -49,41 +60,44 @@ export function SessionList() {
           aria-label="Refresh sessions"
           title="Refresh sessions"
         >
-          <Plus className="h-3 w-3" />
+          <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
 
       <ul className="space-y-1">
-        {sessions.map((sessionId) => (
+        {sessions.map((meta) => (
           <li
-            key={sessionId}
+            key={meta.session_id}
             className={cn(
               'group flex cursor-pointer items-center gap-1.5 rounded px-2 py-1.5 text-xs',
-              sessionId === activeSessionId
+              meta.session_id === activeSessionId
                 ? 'bg-primary text-primary-foreground'
                 : 'hover:bg-muted'
             )}
-            onClick={() => switchSession(sessionId)}
+            onClick={() => switchSession(meta.session_id)}
           >
             <MessageSquare className="h-3 w-3 shrink-0" />
-            <span className="flex-1 truncate font-mono" title={sessionId}>
-              {sessionId.slice(0, 12)}…
+            <span className="flex-1 truncate" title={meta.session_id}>
+              {sessionLabel(meta)}
+            </span>
+            <span className="shrink-0 text-[10px] opacity-50">
+              {formatDate(meta.created_at)}
             </span>
 
             {/* Delete button — only visible on hover */}
             <Dialog
-              open={openDialogId === sessionId}
-              onOpenChange={(open) => setOpenDialogId(open ? sessionId : null)}
+              open={openDialogId === meta.session_id}
+              onOpenChange={(open) => setOpenDialogId(open ? meta.session_id : null)}
             >
               <DialogTrigger asChild>
                 <button
                   onClick={(e) => {
-                    e.stopPropagation(); // Prevent triggering switchSession
-                    setOpenDialogId(sessionId);
+                    e.stopPropagation();
+                    setOpenDialogId(meta.session_id);
                   }}
                   className={cn(
                     'rounded p-0.5 transition-opacity',
-                    sessionId === activeSessionId
+                    meta.session_id === activeSessionId
                       ? 'opacity-60 hover:opacity-100'
                       : 'opacity-0 group-hover:opacity-100 hover:text-destructive'
                   )}
@@ -97,9 +111,9 @@ export function SessionList() {
                 <DialogHeader>
                   <DialogTitle>Delete session?</DialogTitle>
                   <DialogDescription>
-                    This will permanently delete session{' '}
-                    <code className="font-mono text-xs">{sessionId.slice(0, 8)}…</code>{' '}
-                    and all its chat history. This cannot be undone.
+                    This will permanently delete{' '}
+                    <strong>{sessionLabel(meta)}</strong> and all its chat
+                    history. This cannot be undone.
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -111,7 +125,7 @@ export function SessionList() {
                   </Button>
                   <Button
                     variant="destructive"
-                    onClick={() => handleDelete(sessionId)}
+                    onClick={() => handleDelete(meta.session_id)}
                   >
                     Delete
                   </Button>
