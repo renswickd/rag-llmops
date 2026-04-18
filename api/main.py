@@ -56,7 +56,13 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 
-# Serve built frontend from FastAPI in production (optional, for single-container deploy)
-_frontend_dist = Path("frontend/dist")
-if _frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
+# Serve built frontend from FastAPI only when SERVE_FRONTEND=true is set.
+# In development, Vite runs on its own port (5173). In production (single-container
+# deploy), set SERVE_FRONTEND=true and run `npm run build` first.
+if os.getenv("SERVE_FRONTEND", "false").lower() == "true":
+    _frontend_dist = Path("frontend/dist")
+    if _frontend_dist.exists():
+        app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
+        log.info("Serving built frontend from FastAPI", path=str(_frontend_dist))
+    else:
+        log.warning("SERVE_FRONTEND=true but frontend/dist not found — run 'npm run build' first")

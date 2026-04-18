@@ -9,6 +9,7 @@ interface AppState {
   sessions: string[];
   messages: Record<string, Message[]>;   // sessionId -> messages for that session
   isLoading: boolean;
+  isHydrating: boolean;                  // true while fetching history on session switch
   uploadedFiles: UploadedFile[];
   theme: Theme;
   error: string | null;
@@ -16,7 +17,7 @@ interface AppState {
   // Actions
   sendMessage: (question: string) => Promise<void>;
   uploadDocument: (file: File) => Promise<void>;
-  switchSession: (sessionId: string) => void;
+  switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   setTheme: (theme: Theme) => void;
@@ -31,6 +32,7 @@ export const useAppStore = create<AppState>()(
       sessions: [],
       messages: {},
       isLoading: false,
+      isHydrating: false,
       uploadedFiles: [],
       theme: 'light',
       error: null,
@@ -123,8 +125,33 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      switchSession: (sessionId: string) => {
+      switchSession: async (sessionId: string) => {
         set({ activeSessionId: sessionId, error: null });
+
+        // Re-hydrate from backend if no messages cached for this session
+        const { messages } = get();
+        if (!messages[sessionId] || messages[sessionId].length === 0) {
+          set({ isHydrating: true });
+          try {
+            const response = await api.getHistory(sessionId);
+            if (response.messages.length > 0) {
+              // Convert backend HistoryMessage to frontend Message
+              const hydrated: Message[] = response.messages.map((m) => ({
+                id: crypto.randomUUID(),
+                role: m.role === 'human' ? 'user' : 'assistant',
+                content: m.content,
+                timestamp: new Date(m.timestamp),
+              }));
+              set((state) => ({
+                messages: { ...state.messages, [sessionId]: hydrated },
+              }));
+            }
+          } catch {
+            // History re-hydration is best-effort — do not block the session switch
+          } finally {
+            set({ isHydrating: false });
+          }
+        }
       },
 
       deleteSession: async (sessionId: string) => {

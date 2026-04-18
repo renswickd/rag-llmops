@@ -43,6 +43,7 @@ def init_services() -> None:
 
     index_dir = Path(config["api"]["index_dir"])
     data_dir = Path(config["data"]["data_dir"])
+    history_dir = Path(config["data"]["history_dir"])
 
     _model_loader = ModelLoader()
 
@@ -58,7 +59,8 @@ def init_services() -> None:
     else:
         log.warning("No existing FAISS index found — upload a document to get started", index_dir=str(index_dir))
 
-    _chat_manager = ChatManager(retriever=_retriever)
+    _chat_manager = ChatManager(retriever=_retriever, history_dir=history_dir)
+    _chat_manager._load_persisted_history()
 
     _session_registry = SessionRegistry(data_dir=data_dir)
 

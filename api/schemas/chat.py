@@ -14,3 +14,12 @@ class ChatResponse(BaseModel):
     session_id: str
     history_len: int
     standalone_q: str
+
+class HistoryMessage(BaseModel):
+    role: str          # "human" or "ai"
+    content: str
+    timestamp: str     # ISO-8601 UTC string
+
+class HistoryResponse(BaseModel):
+    session_id: str
+    messages: list[HistoryMessage]

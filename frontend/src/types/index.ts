@@ -43,5 +43,11 @@ export interface ChatRequest {
     chunks_created: number;
     uploaded_at: Date;
   }
+
+  export interface HistoryMessage {
+    role: 'human' | 'ai';
+    content: string;
+    timestamp: string;  // ISO-8601 string from backend
+  }
   
   export type Theme = 'light' | 'dark';

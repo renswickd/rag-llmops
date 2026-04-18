@@ -1,5 +1,8 @@
 from typing import Optional
+from datetime import datetime, timezone
+import json
 from dotenv import load_dotenv
+from pathlib import Path
 
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -46,6 +49,7 @@ class ChatManager:
         max_tokens: int = config["llm"]["groq"]["max_output_tokens"],
         condense_question: bool = config["llm"]["groq"].get("condense_question", True),
         max_history_turns: int = config["llm"]["groq"].get("max_history_turns", 10),
+        history_dir: Optional[Path] = None,
         session_id: Optional[str] = None,
     ):
         
@@ -56,6 +60,9 @@ class ChatManager:
         self.max_tokens = max_tokens
         self.condense_question = condense_question
         self.max_history_turns = max_history_turns
+        self._history_dir = history_dir
+        if self._history_dir:
+            self._history_dir.mkdir(parents=True, exist_ok=True)
  
         self._sessions: dict[str, InMemoryChatMessageHistory] = {}
         self.session_id = session_id or generate_session_id("session")
@@ -111,6 +118,7 @@ class ChatManager:
             # 4. Persist turn in session history
             history.add_message(HumanMessage(content=question))
             history.add_message(AIMessage(content=answer))
+            self._persist_turn(session_id, question, answer)
  
             sources = [
                 {k: v for k, v in doc.metadata.items()}
@@ -132,12 +140,38 @@ class ChatManager:
             self.log.error("Chat turn failed", session_id=session_id, error=str(e))
             raise RagAssistantException("Chat turn failed", e) from e
     
+    def get_history(self, session_id: str) -> list[dict]:
+        """
+        Return stored messages for a session as a list of dicts.
+        Used by the history endpoint and frontend hydration.
+        Returns [] if no history exists.
+        """
+        if not self._history_dir:
+            return []
+        path = self._history_dir / f"{session_id}.jsonl"
+        if not path.exists():
+            return []
+
+        messages = []
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    messages.append(json.loads(line))
+        return messages
+    
     def clear_session(self, session_id: str) -> bool:
-        if session_id in self._sessions:
+        existed = session_id in self._sessions
+        if existed:
             del self._sessions[session_id]
             self.log.info("Session cleared", session_id=session_id)
-            return True
-        return False
+        if self._history_dir:
+            path = self._history_dir / f"{session_id}.jsonl"
+            if path.exists():
+                path.unlink()
+                self.log.info("History file deleted", session_id=session_id)
+                existed = True 
+        return existed
  
     def list_sessions(self) -> list[str]:
         return list(self._sessions.keys())
@@ -180,7 +214,43 @@ class ChatManager:
         except Exception as e:
             self.log.warning("Question condensation failed — using raw question", error=str(e))
             return question
-        
+    
+    def _persist_turn(self, session_id: str, human_content: str, ai_content: str, ) -> None:
+        """Append one human+AI turn to data/history/<session_id>.jsonl."""
+        if not self._history_dir:
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        path = self._history_dir / f"{session_id}.jsonl"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"role": "human", "content": human_content, "timestamp": now}) + "\n")
+            f.write(json.dumps({"role": "ai",    "content": ai_content,    "timestamp": now}) + "\n")
+
+    def _load_persisted_history(self) -> None:
+        """
+        Scan self._history_dir for *.jsonl files and reconstruct InMemoryChatMessageHistory     for each session found. Called once at startup.
+        """
+        if not self._history_dir or not self._history_dir.exists():
+            return
+
+        loaded = 0
+        for path in self._history_dir.glob("*.jsonl"):
+            session_id = path.stem
+            history = InMemoryChatMessageHistory()
+            with path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    msg = json.loads(line)
+                    if msg["role"] == "human":
+                        history.add_message(HumanMessage(content=msg["content"]))
+                    else:
+                        history.add_message(AIMessage(content=msg["content"]))
+            self._sessions[session_id] = history
+            loaded += 1
+        self.log.info("Persisted history loaded", sessions_loaded=loaded)
+            
     # ----------
     # Chains
     # ----------
