@@ -223,14 +223,13 @@ def test_chat_rejects_out_of_range_top_k(client, top_k):
 # ─────────────────────────────────────────────
 
 def test_list_sessions_returns_all_registered_sessions(client):
-    """Sessions are now read from registry, not ChatManager._sessions."""
+    """Sessions are returned as full metadata objects (Phase C)."""
     resp = client.get("/chat/sessions")
 
     assert resp.status_code == 200
-    assert resp.json()["sessions"] == [
-        FAKE_SESSION_ID,
-        "upload_20260418_090000_abc00002",
-    ]
+    session_ids = [s["session_id"] for s in resp.json()["sessions"]]
+    assert FAKE_SESSION_ID in session_ids
+    assert "upload_20260418_090000_abc00002" in session_ids
 
 
 def test_list_sessions_returns_empty_list_when_registry_empty(client, mock_registry):
@@ -242,12 +241,12 @@ def test_list_sessions_returns_empty_list_when_registry_empty(client, mock_regis
     assert resp.json()["sessions"] == []
 
 
-def test_list_sessions_returns_session_ids_only(client):
-    """Response contains session_id strings, not full metadata objects."""
+def test_list_sessions_returns_full_metadata_objects(client):
+    """Response contains SessionMetadata objects with session_id, created_at, documents."""
     resp = client.get("/chat/sessions")
-    body = resp.json()
+    sessions = resp.json()["sessions"]
 
-    assert all(isinstance(s, str) for s in body["sessions"])
+    assert all("session_id" in s and "created_at" in s and "documents" in s for s in sessions)
 
 
 def test_list_sessions_returns_503_when_service_not_initialised(no_service_client):
@@ -357,3 +356,51 @@ def test_delete_session_returns_500_on_unexpected_exception(client, mock_registr
 
     assert resp.status_code == 500
     assert "Disk write failed" in resp.json()["detail"]
+
+
+# ─────────────────────────────────────────────
+# GET /chat/sessions/{session_id}/history  (Phase B)
+# ─────────────────────────────────────────────
+
+FAKE_HISTORY_MESSAGES = [
+    {"role": "human", "content": "What is RAG?", "timestamp": "2026-04-18T10:00:00+00:00"},
+    {"role": "ai",    "content": "RAG stands for Retrieval-Augmented Generation.", "timestamp": "2026-04-18T10:00:01+00:00"},
+]
+
+
+def test_get_history_returns_200_with_messages(client, mock_chat_mgr):
+    mock_chat_mgr.get_history.return_value = FAKE_HISTORY_MESSAGES
+
+    resp = client.get(f"/chat/sessions/{FAKE_SESSION_ID}/history")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_id"] == FAKE_SESSION_ID
+    assert len(body["messages"]) == 2
+    assert body["messages"][0]["role"] == "human"
+    assert body["messages"][1]["role"] == "ai"
+
+
+def test_get_history_returns_empty_list_when_no_history(client, mock_chat_mgr):
+    mock_chat_mgr.get_history.return_value = []
+
+    resp = client.get(f"/chat/sessions/{FAKE_SESSION_ID}/history")
+
+    assert resp.status_code == 200
+    assert resp.json()["messages"] == []
+
+
+def test_get_history_returns_503_when_service_not_initialised(no_service_client):
+    resp = no_service_client.get(f"/chat/sessions/{FAKE_SESSION_ID}/history")
+
+    assert resp.status_code == 503
+    assert "not initialised" in resp.json()["detail"]
+
+
+def test_get_history_returns_500_on_exception(client, mock_chat_mgr):
+    mock_chat_mgr.get_history.side_effect = Exception("File read error")
+
+    resp = client.get(f"/chat/sessions/{FAKE_SESSION_ID}/history")
+
+    assert resp.status_code == 500
+    assert "File read error" in resp.json()["detail"]

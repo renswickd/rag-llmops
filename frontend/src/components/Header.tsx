@@ -30,8 +30,8 @@ export function Header() {
             </SelectTrigger>
             <SelectContent>
               {sessions.map((s) => (
-                <SelectItem key={s} value={s} className="font-mono text-xs">
-                  {s.slice(0, 12)}…
+                <SelectItem key={s.session_id} value={s.session_id} className="text-xs">
+                  {s.documents.length > 0 ? s.documents[0].file_name : s.session_id.slice(0, 12) + '…'}
                 </SelectItem>
               ))}
             </SelectContent>

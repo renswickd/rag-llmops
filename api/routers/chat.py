@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager
-from api.schemas.chat import ChatRequest, ChatResponse
+from api.schemas.chat import ChatRequest, ChatResponse, HistoryResponse, SessionListResponse, SessionMetadata
 from conversation.chat_manager import ChatManager
 from ingestion.faiss_manager import FaissManager
 from ingestion.data_ingestion import DataIngestion
@@ -46,18 +46,19 @@ def chat(request: ChatRequest, chat_mgr: ChatManager = Depends(get_chat_manager)
         raise HTTPException(status_code=500, detail=str(e.error_message))
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=SessionListResponse)
 def list_sessions(chat_mgr: ChatManager = Depends(get_chat_manager), session_registry: SessionRegistry = Depends(get_session_registry)):
-    """List all active conversation session IDs."""
+    """List all sessions with metadata (session_id, created_at, documents)."""
     if chat_mgr is None:
         raise HTTPException(status_code=503, detail="Chat service not initialised.")
     if session_registry is None:
         raise HTTPException(status_code=503, detail="Session registry not initialised.")
     
     try:
-        sessions = [s["session_id"] for s in session_registry.list_sessions()]
+        raw = session_registry.list_sessions()   # already sorted newest-first
+        sessions = [SessionMetadata(**s) for s in raw]
         log.info("Listed sessions", count=len(sessions))
-        return {"sessions": sessions}
+        return SessionListResponse(sessions=sessions)
     except Exception as e:
         log.error("Failed to list sessions", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -129,4 +130,23 @@ def delete_session(
 
     except Exception as e:
         log.error("Failed to delete session", session_id=session_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sessions/{session_id}/history", response_model=HistoryResponse)
+def get_session_history(
+    session_id: str,
+    chat_mgr: ChatManager = Depends(get_chat_manager),
+):
+    """
+    Return the stored conversation history for one session.
+    Used by the frontend to re-hydrate messages after a page refresh.
+    Returns 200 with an empty list if the session has no history yet.
+    """
+    if chat_mgr is None:
+        raise HTTPException(status_code=503, detail="Chat service not initialised.")
+    try:
+        messages = chat_mgr.get_history(session_id)
+        return HistoryResponse(session_id=session_id, messages=messages)
+    except Exception as e:
+        log.error("Failed to get history", session_id=session_id, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

@@ -43,5 +43,22 @@ export interface ChatRequest {
     chunks_created: number;
     uploaded_at: Date;
   }
+
+  export interface HistoryMessage {
+    role: 'human' | 'ai';
+    content: string;
+    timestamp: string;  // ISO-8601 string from backend
+  }
+
+  export interface SessionDocument {
+    file_name: string;
+    chunks_created: number;
+  }
+  
+  export interface SessionMetadata {
+    session_id: string;
+    created_at: string;        // ISO-8601 from backend
+    documents: SessionDocument[];
+  }
   
   export type Theme = 'light' | 'dark';

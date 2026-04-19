@@ -28,6 +28,7 @@ embedding_model:
 
 data:
   data_dir: data
+  history_dir: data/history
   uploads_subdir: uploads
   allowed_extensions:
     - .pdf
