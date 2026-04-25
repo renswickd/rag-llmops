@@ -1,0 +1,40 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
+# Data — must be volume-mounted at runtime, not baked into the image
+data/
+faiss_index/
+logs/
+
+# Secrets — never bake these into an image
+.env
+.env.*
+*.pem
+*.key
+
+# Dev tooling
+.git/
+.github/
+docs/
+scripts/
+tests/
+*.md
+
+# IDE
+.vscode/
+.idea/
+.claude/
