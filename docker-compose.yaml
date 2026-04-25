@@ -1,0 +1,66 @@
+services:
+  backend:
+    # Build from the Dockerfile at the project root.
+    # --build flag on `docker compose up` triggers a rebuild when source changes.
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: rag-llmops-backend
+
+    ports:
+      - "8000:8000"
+    environment:
+      # Environment variables from .env file
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+
+      # In ACA production this is false (frontend on Static Web Apps).
+      - SERVE_FRONTEND=true
+
+      # For full-container mode (SERVE_FRONTEND=true), localhost:8000 is the origin.
+      - CORS_ORIGINS=http://localhost:8000,http://localhost:5173
+
+      # Force production config values inside the container.
+      # Prevents the dev reload loop from activating.
+      - APP_ENVIRONMENT=production
+
+    env_file:
+      - .env
+
+    volumes:
+      # Application data (uploads, history, session registry)
+      - rag-data:/app/data
+
+      # FAISS index files
+      - rag-faiss:/app/faiss_index
+
+      # Structured log output
+      - rag-logs:/app/logs
+
+      # HuggingFace model cache — critical for fast restarts.
+      # Without this, the ~600 MB embedding model is re-downloaded on every
+      # `docker compose down && docker compose up`. With this mount, the model
+      # is downloaded once and cached on the Docker host.
+      - rag-hf-cache:/app/.cache/huggingface
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+    # Restart policy for compose (not used in local dev, useful for demos).
+    # Remove or set to "no" during active development.
+    restart: unless-stopped
+
+volumes:
+  rag-data:
+    name: rag-llmops-data
+  rag-faiss:
+    name: rag-llmops-faiss
+  rag-hf-cache:
+    name: rag-llmops-hf-cache
+  rag-logs:
+    name: rag-llmops-logs
