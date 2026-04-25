@@ -50,7 +50,9 @@ COPY pyproject.toml uv.lock ./
 #   (the --system flag was removed from uv sync in recent uv releases)
 # --frozen: refuse to proceed if uv.lock is out of sync with pyproject.toml.
 # --no-cache: don't write a uv download cache inside the layer (saves space).
-RUN UV_SYSTEM_PYTHON=1 uv sync --frozen --no-cache
+# --no-group dev: exclude streamlit and pytest from the production image.
+# Both are [dependency-groups] dev in pyproject.toml — they are never needed at runtime.
+RUN UV_SYSTEM_PYTHON=1 uv sync --frozen --no-cache --no-group dev
 
 # Copy application code.
 # Order matters for caching: files that change frequently go last.
