@@ -45,14 +45,15 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency manifests before application code.
 COPY pyproject.toml uv.lock ./
 
-# Install all dependencies into the system Python.
-# UV_SYSTEM_PYTHON=1: target the system Python instead of creating a .venv.
-#   (the --system flag was removed from uv sync in recent uv releases)
+# Create a virtual environment at /app/.venv and install all runtime dependencies.
 # --frozen: refuse to proceed if uv.lock is out of sync with pyproject.toml.
 # --no-cache: don't write a uv download cache inside the layer (saves space).
 # --no-group dev: exclude streamlit and pytest from the production image.
-# Both are [dependency-groups] dev in pyproject.toml — they are never needed at runtime.
-RUN UV_SYSTEM_PYTHON=1 uv sync --frozen --no-cache --no-group dev
+RUN uv sync --frozen --no-cache --no-group dev
+
+# Put the venv's bin directory first on PATH so `python` and all entry-points
+# resolve to the venv — not the bare system Python that has no packages.
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application code.
 # Order matters for caching: files that change frequently go last.
@@ -77,9 +78,5 @@ EXPOSE 8000
 # Set HuggingFace cache directory to a predictable path inside the container.
 ENV HF_HOME=/app/.cache/huggingface
 
-# Run uvicorn directly — not run.py, which enables --reload in dev mode.
-CMD ["uvicorn", "api.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--timeout-keep-alive", "75"]
+# run.py calls uvicorn.run() via Python API — no console-script PATH dependency.
+CMD ["python", "run.py"]
