@@ -154,10 +154,11 @@ Ask question
 
 ### Prerequisites
 
-- Python 3.13
+- Python 3.13 + [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Node.js 20+ and npm
 - A [Groq API key](https://console.groq.com/)
 - A [HuggingFace token](https://huggingface.co/settings/tokens)
+- Docker (for containerised run)
 
 ### Install
 
@@ -165,10 +166,8 @@ Ask question
 git clone <repo-url>
 cd rag-llmops-2
 
-# Backend
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+# Backend — uv creates .venv and installs all dependencies from uv.lock
+uv sync
 
 # Frontend
 cd frontend && npm install && cd ..
@@ -178,7 +177,7 @@ cd frontend && npm install && cd ..
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in GROQ_API_KEY, HF_TOKEN
+# Edit .env and fill in GROQ_API_KEY and HF_TOKEN
 ```
 
 `.env.example`:
@@ -187,13 +186,12 @@ GROQ_API_KEY=<your-groq-api-key>
 HF_TOKEN=<your-hf-token>
 CONFIG_PATH=config/config.yaml
 CORS_ORIGINS=http://localhost:5173
+SERVE_FRONTEND=true
 ```
 
 All other parameters (model names, chunk size, retrieval settings) are in `config/config.yaml`.
 
-### Run (development)
-
-Open two terminals:
+### Run — development (two terminals)
 
 ```bash
 # Terminal 1 — FastAPI backend
@@ -210,7 +208,26 @@ cd frontend && npm run dev
 
 The Vite dev server proxies `/api` requests to `localhost:8000`, so CORS is not an issue in development.
 
-> **Note:** The backend does not serve the frontend UI. Set `SERVE_FRONTEND=true` only in single-container production deployments where `frontend/dist` is present.
+### Run — Docker (single container)
+
+```bash
+# Build image (first time ~5–8 min; rebuilds after code changes are fast)
+docker build -t rag-llmops:local .
+
+# Run — secrets come from .env, never from the command line
+docker run --rm -p 8000:8000 --env-file .env rag-llmops:local
+```
+
+The frontend and API are both served from port 8000 (`SERVE_FRONTEND=true` in `.env`). Open `http://localhost:8000`.
+
+### Run — docker-compose (with persistent volumes)
+
+```bash
+docker compose up --build   # first run
+docker compose up           # subsequent runs (no rebuild needed)
+docker compose down         # stop, keep volumes
+docker compose down -v      # stop and delete all data volumes
+```
 
 ### Test
 
@@ -280,7 +297,8 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 5 | Docker multi-stage build + docker-compose local orchestration | Pending |
+| 5 | Docker multi-stage build (Node → Python, uv venv, CPU-only torch) | Done |
+| 5 | docker-compose with named volumes, health check, env-file secrets | Done |
 | 6 | Azure Container Registry + Azure Container Instances deployment | Pending |
 | 7 | GitHub Actions CI pipeline | Pending |
 
@@ -336,7 +354,10 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 │   ├── fix_session_plan.md  # Session gap analysis and Phase A–D roadmap
 │   ├── fix_session_plan_a.md # Phase A implementation guide (session foundation)
 │   └── fix_session_plan_bc.md # Phase B+C implementation guide (persistence + metadata UX)
-├── run.py                   # Entry point
-├── .env.example
-└── requirements.txt
+├── Dockerfile               # Multi-stage build: Node (frontend) → Python (backend)
+├── docker-compose.yaml      # Local orchestration with named volumes and health check
+├── run.py                   # Entry point (calls uvicorn.run() via Python API)
+├── pyproject.toml           # Dependencies + uv config (CPU torch index, dev group)
+├── uv.lock                  # Pinned lock file — regenerate with `uv lock` after pyproject changes
+└── .env.example
 ```
