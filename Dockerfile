@@ -10,8 +10,10 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 
 # npm ci: reproducible install using package-lock.json.
-# --omit=dev: exclude eslint, typescript, vitest — not needed for the build.
-RUN npm ci --omit=dev || npm install
+# Install ALL dependencies including devDependencies — vite, tsc, and
+# @vitejs/plugin-react are devDeps but required to run `npm run build`.
+# Stage 1 is discarded after the build, so image size is not affected.
+RUN npm ci || npm install
 
 # Copy the rest of the frontend source
 COPY frontend/ .
@@ -43,10 +45,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency manifests before application code.
 COPY pyproject.toml uv.lock ./
 
-# Install all dependencies into the system Python (--system).
+# Install all dependencies into the system Python.
+# UV_SYSTEM_PYTHON=1: target the system Python instead of creating a .venv.
+#   (the --system flag was removed from uv sync in recent uv releases)
 # --frozen: refuse to proceed if uv.lock is out of sync with pyproject.toml.
 # --no-cache: don't write a uv download cache inside the layer (saves space).
-RUN uv sync --frozen --system --no-cache
+RUN UV_SYSTEM_PYTHON=1 uv sync --frozen --no-cache
 
 # Copy application code.
 # Order matters for caching: files that change frequently go last.
