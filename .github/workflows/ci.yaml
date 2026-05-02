@@ -19,16 +19,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      # Install uv
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
+        uses: astral-sh/setup-uv@v8
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -39,7 +36,7 @@ jobs:
       # Run the full test suite with verbose output.
       - name: Run backend tests
         run: uv run pytest tests/ -v
-  
+
   # ─────────────────────────────────────────────────────────────────────────
   # Job 2 — Frontend build check
   # Validates that the TypeScript compiles and Vite produces a dist/ bundle.
@@ -49,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           # Cache npm packages between runs — avoids re-downloading on every push
@@ -64,12 +61,12 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      # Type-check + bundle. 
+      # Type-check + bundle.
       # Fails on TypeScript errors or missing imports.
       - name: Build frontend
         working-directory: frontend
         run: npm run build
-  
+
   # ────────────────────────────────────────────────────────────────
   # Job 3 — Build Docker image and push to ACR
   # Only runs on the main branch AND only after both test jobs pass.
@@ -84,23 +81,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # AZURE_CREDENTIALS contains the full JSON; this action extracts
       - name: Log in to Azure Container Registry
-        uses: azure/docker-login@v2
+        uses: docker/login-action@v3
         with:
-          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
           username: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
           password: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
 
       # Build and push in one step using docker/build-push-action.
       # Two tags are applied:
-      #   - sha-<7-char-commit-hash>  e.g. sha-a3f9c1b  — immutable, used for deploy + rollback
-      #   - latest
+      #   - sha-<commit-hash>  — immutable, used for deploy + rollback
+      #   - latest             — always points to the most recent main build
       - name: Build and push image to ACR
         uses: docker/build-push-action@v6
         with:
