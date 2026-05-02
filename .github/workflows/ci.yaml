@@ -36,3 +36,33 @@ jobs:
       # Run the full test suite with verbose output.
       - name: Run backend tests
         run: uv run pytest tests/ -v
+  
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 2 — Frontend build check
+  # Validates that the TypeScript compiles and Vite produces a dist/ bundle.
+  # ─────────────────────────────────────────────────────────────────────────
+  test-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          # Cache npm packages between runs — avoids re-downloading on every push
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # Install ALL dependencies including devDependencies.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Type-check + bundle. 
+      # Fails on TypeScript errors or missing imports.
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
