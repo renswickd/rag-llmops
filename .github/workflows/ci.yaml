@@ -97,7 +97,7 @@ jobs:
       # Build and push in one step using docker/build-push-action.
       # Two tags are applied:
       #   - sha-<7-char-commit-hash>  e.g. sha-a3f9c1b  — immutable, used for deploy + rollback
-      #   - latest       
+      #   - latest
       - name: Build and push image to ACR
         uses: docker/build-push-action@v6
         with:
