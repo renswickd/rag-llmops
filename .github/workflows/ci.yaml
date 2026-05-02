@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# Opt into the Node.js 24 Actions runtime early.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
