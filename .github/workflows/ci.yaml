@@ -106,6 +106,8 @@ jobs:
           # Docker Desktop on Mac will pull the arm64 variant automatically.
           # In production Azure runs amd64 — both variants share the same image tag.
           platforms: linux/amd64,linux/arm64
+          # provenance=false prevents buildx from attaching SLSA attestation manifests.
+          provenance: false
           tags: |
             ${{ secrets.ACR_LOGIN_SERVER }}/rag-llmops:latest
             ${{ secrets.ACR_LOGIN_SERVER }}/rag-llmops:sha-${{ github.sha }}

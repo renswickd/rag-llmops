@@ -70,13 +70,14 @@ docs/              Implementation plans and roadmaps
 | File upload | react-dropzone |
 | Icons | lucide-react |
 
-### Deployment (planned — Phase 5–6)
+### Deployment
 | Component | Technology |
 |-----------|-----------|
-| Containerisation | Docker (multi-stage build) |
+| Containerisation | Docker (multi-stage build, linux/amd64 + linux/arm64) |
 | Local orchestration | docker-compose |
-| Cloud | Azure Container Instances + Azure Container Registry |
-| CI | GitHub Actions |
+| Image registry | Azure Container Registry (`ragllmopsacr.azurecr.io`) |
+| CI | GitHub Actions (test on every push; build + push to ACR on `main`) |
+| Cloud (pending) | Azure Container Instances |
 
 ---
 
@@ -299,8 +300,9 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 |-------|-------------|--------|
 | 5 | Docker multi-stage build (Node → Python, uv venv, CPU-only torch) | Done |
 | 5 | docker-compose with named volumes, health check, env-file secrets | Done |
-| 6 | Azure Container Registry + Azure Container Instances deployment | Pending |
-| 7 | GitHub Actions CI pipeline | Pending |
+| 3 | Azure Container Registry (`ragllmopsacr.azurecr.io`, Standard tier) | Done |
+| 3 | GitHub Actions CI — pytest + frontend build on every push; multi-platform image pushed to ACR on `main` | Done |
+| 6 | Azure Container Instances deployment | Pending |
 
 ---
 
@@ -348,6 +350,9 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 │   │                        #   ChatInput, DocumentUpload, SessionList, ThemeToggle
 │   ├── vite.config.ts       # Tailwind plugin + @/ alias + /api proxy
 │   └── package.json
+├── .github/
+│   └── workflows/
+│       └── ci.yaml          # CI: test-backend (pytest) + test-frontend (build) on every push; build-push to ACR on main
 ├── tests/                   # pytest unit tests
 ├── docs/
 │   ├── plan.md              # Full implementation roadmap
