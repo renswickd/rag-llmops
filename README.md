@@ -14,7 +14,7 @@ The goal of this project is to build and deploy a full-stack RAG application tha
 - Per-session document isolation — each session only retrieves from its own documents
 - Persistent conversation history that survives backend restarts
 - A modern React frontend with dark/light mode and session management
-- Containerised deployment on Azure Container Instances
+- Containerised deployment on Azure Container Apps
 - LLMOps practices: structured logging, configuration management, and automated testing
 
 This is a learning project intended to be shared with others for testing.
@@ -40,7 +40,6 @@ data/
   history/         Per-session conversation history as JSONL files
   session_registry.json  Authoritative session list with metadata
 tests/             pytest unit test suite
-docs/              Implementation plans and roadmaps
 ```
 
 ---
@@ -77,7 +76,10 @@ docs/              Implementation plans and roadmaps
 | Local orchestration | docker-compose |
 | Image registry | Azure Container Registry (`ragllmopsacr.azurecr.io`) |
 | CI | GitHub Actions (test on every push; build + push to ACR on `main`) |
-| Cloud (pending) | Azure Container Instances |
+| Backend hosting | Azure Container Apps (`rag-llmops-backend`, Consumption plan) |
+| Persistent storage | Azure Files share (`faiss-index`) mounted at `/app/faiss_index` |
+| Observability | Log Analytics + Application Insights (`rag-llmops-insights`) |
+| Frontend hosting (pending) | Azure Static Web Apps |
 
 ---
 
@@ -261,10 +263,6 @@ Key settings in `config/config.yaml`:
 
 ---
 
-## Implementation Progress
-
-Tracked in [`docs/plan.md`](docs/plan.md).
-
 ### Backend
 
 | Component | Details | Status |
@@ -298,11 +296,18 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 5 | Docker multi-stage build (Node → Python, uv venv, CPU-only torch) | Done |
-| 5 | docker-compose with named volumes, health check, env-file secrets | Done |
+| 3 | Docker multi-stage build (Node → Python, uv venv, CPU-only torch) | Done |
+| 3 | docker-compose with named volumes, health check, env-file secrets | Done |
 | 3 | Azure Container Registry (`ragllmopsacr.azurecr.io`, Standard tier) | Done |
-| 3 | GitHub Actions CI — pytest + frontend build on every push; multi-platform image pushed to ACR on `main` | Done |
-| 6 | Azure Container Instances deployment | Pending |
+| 3 | GitHub Actions CI — pytest + frontend build on every push; multi-platform image pushed to ACR on `main` (`provenance: false` to avoid SLSA attestation issues) | Done |
+| 4 | Azure Storage Account (`ragllmopsstorage`) — Azure Files share `faiss-index` + Blob containers | Done |
+| 4 | Log Analytics workspace + Application Insights for structured log forwarding | Done |
+| 4 | Container Apps environment (`rag-llmops-env`) with Azure Files volume mount (`faiss-storage`) | Done |
+| 4 | Container App (`rag-llmops-backend`) — user-assigned managed identity for ACR auth, secrets, env vars, FAISS volume mount at `/app/faiss_index` | Done |
+| 4 | Backend live health check and E2E verification | In progress |
+| 4 | Azure Static Web Apps frontend deployment + CORS wiring | Pending |
+| 5 | Cloud storage abstraction — migrate session data (uploads, history, registry) to Azure Blob Storage | Pending |
+| 6 | Automated CD — `deploy` job in CI to update Container App on every `main` push | Pending |
 
 ---
 
@@ -354,11 +359,6 @@ Tracked in [`docs/plan.md`](docs/plan.md).
 │   └── workflows/
 │       └── ci.yaml          # CI: test-backend (pytest) + test-frontend (build) on every push; build-push to ACR on main
 ├── tests/                   # pytest unit tests
-├── docs/
-│   ├── plan.md              # Full implementation roadmap
-│   ├── fix_session_plan.md  # Session gap analysis and Phase A–D roadmap
-│   ├── fix_session_plan_a.md # Phase A implementation guide (session foundation)
-│   └── fix_session_plan_bc.md # Phase B+C implementation guide (persistence + metadata UX)
 ├── Dockerfile               # Multi-stage build: Node (frontend) → Python (backend)
 ├── docker-compose.yaml      # Local orchestration with named volumes and health check
 ├── run.py                   # Entry point (calls uvicorn.run() via Python API)
