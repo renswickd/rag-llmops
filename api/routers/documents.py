@@ -1,13 +1,15 @@
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 
-from api.dependencies import get_faiss_manager, get_session_registry
+from api.dependencies import get_faiss_manager, get_session_registry, get_storage
 from api.schemas.document import UploadResponse
 from ingestion.faiss_manager import FaissManager
 from ingestion.data_ingestion import DataIngestion
 from core.session_store import SessionRegistry
+from core.storage import StorageBackend
 from core.config import load_config
 from core.exceptions import RagAssistantException
 from core.logging_config import get_logger
@@ -26,16 +28,18 @@ async def upload_document(
     session_id: Optional[str] = Form(None, description="Reuse an existing session or leave blank to create a new one"),
     faiss_mgr: FaissManager = Depends(get_faiss_manager),
     session_registry: SessionRegistry = Depends(get_session_registry),
+    storage: StorageBackend = Depends(get_storage),
 ):
     """
     Upload a document and ingest it into the vector store.
 
     What happens here:
-    1. The file is archived to data_dir/<session_id>/<filename> for durability.
-    2. DataIngestion.load_file() parses the archived file into LangChain documents.
-    3. DataIngestion.chunk_documents() splits them into indexed chunks.
-    4. The chunks are embedded and added to (or used to create) the FAISS index.
-    5. You get back a `session_id` to use in your `/chat` calls.
+    1. The file bytes are persisted to the storage backend (local or Blob).
+    2. A temporary local copy is written so DataIngestion can parse it.
+    3. DataIngestion.load_file() parses the temp file into LangChain documents.
+    4. DataIngestion.chunk_documents() splits them into indexed chunks.
+    5. The chunks are embedded and added to (or used to create) the FAISS index.
+    6. You get back a `session_id` to use in your `/chat` calls.
 
     Supported file types: PDF, TXT, Markdown.
     """
@@ -52,24 +56,37 @@ async def upload_document(
     sid = session_id or generate_session_id("upload")
     contents = await file.read()
 
-    # Persist the uploaded file to the configured data directory.
-    # This archive survives process restarts and is the canonical copy for re-ingestion.
-    data_dir = Path(config["data"]["data_dir"])
-    session_dir = data_dir / "uploads" / sid      # data/uploads/<session_id>/
-    session_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = session_dir / file.filename
-    archive_path.write_bytes(contents)
-    log.info("File archived to session directory", file=file.filename, archive_path=str(archive_path), session_id=sid)
+    # # Persist the uploaded file to the configured data directory.
+    # # This archive survives process restarts and is the canonical copy for re-ingestion.
+    # data_dir = Path(config["data"]["data_dir"])
+    # session_dir = data_dir / "uploads" / sid      # data/uploads/<session_id>/
+    # session_dir.mkdir(parents=True, exist_ok=True)
+    # archive_path = session_dir / file.filename
+    # archive_path.write_bytes(contents)
+    # log.info("File archived to session directory", file=file.filename, archive_path=str(archive_path), session_id=sid)\
 
+    # 1. Persist to the configured storage backend (local disk or Azure Blob).
+    storage.save_file(session_id=sid, filename=file.filename, data=contents)
+    log.info("File archived to storage backend", file=file.filename, session_id=sid)
+
+    # 2. Write a temporary local copy for DataIngestion (which needs a real Path).
+    #    Using a temp file avoids coupling DataIngestion to the storage abstraction.
+    #    The temp file is deleted in the finally block.
+
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(contents)
+            tmp_path = Path(tmp.name)
+
         data_ingestion = DataIngestion(
-            data_dir=session_dir,
+            data_dir=tmp_path.parent,
             faiss_manager=faiss_mgr,
             session_id=sid,
         )
 
         # load_file() targets the single archived file directly — no directory scan.
-        raw_docs = data_ingestion.load_file(archive_path)
+        raw_docs = data_ingestion.load_file(tmp_path)
         chunks = data_ingestion.chunk_documents(raw_docs)
 
         # Add to existing index or create a new one if this is the first upload.
@@ -97,3 +114,7 @@ async def upload_document(
     except RagAssistantException as e:
         log.error("Ingestion failed", file=file.filename, error=str(e))
         raise HTTPException(status_code=500, detail=str(e.error_message))
+    
+    finally:
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
