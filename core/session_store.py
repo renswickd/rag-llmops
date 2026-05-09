@@ -93,3 +93,71 @@ class SessionRegistry:
     def exists(self, session_id: str) -> bool:
         with self._lock:
             return session_id in self._read()
+
+
+if __name__ == "__main__":
+    # Phase 5 Step 7 smoke test — runs after SessionRegistry is migrated to
+    # accept storage= instead of data_dir=.  Until then this block shows the
+    # target state.  Run with:  uv run python core/session_store.py
+    import tempfile
+    from pathlib import Path
+    from core.storage import LocalStorageBackend
+
+    print("=== Step 7 SessionRegistry storage smoke ===")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        backend = LocalStorageBackend(data_dir=Path(tmp))
+        registry = SessionRegistry(storage=backend)
+
+        # 1. Registry is empty on first use
+        assert registry.list_sessions() == []
+        assert registry.read_registry() is None or registry.list_sessions() == []
+        print("  [1] fresh registry starts empty")
+
+        # 2. register() creates a session entry and persists it
+        registry.register("sess-1", "report.pdf", chunks_created=10)
+        raw = backend.read_registry()
+        assert raw is not None and "sess-1" in raw
+        print("  [2] register() persists session to storage")
+
+        # 3. list_sessions() returns the entry
+        sessions = registry.list_sessions()
+        assert len(sessions) == 1
+        assert sessions[0]["session_id"] == "sess-1"
+        assert sessions[0]["documents"][0]["file_name"] == "report.pdf"
+        print(f"  [3] list_sessions() returns {len(sessions)} session")
+
+        # 4. second upload to same session appends a document
+        registry.register("sess-1", "notes.txt", chunks_created=5)
+        session = registry.get("sess-1")
+        assert len(session["documents"]) == 2
+        print(f"  [4] second register() appended document ({len(session['documents'])} total)")
+
+        # 5. get() returns a single session by ID
+        result = registry.get("sess-1")
+        assert result is not None and result["session_id"] == "sess-1"
+        assert registry.get("nonexistent") is None
+        print("  [5] get() returns session or None correctly")
+
+        # 6. exists() reflects registry state
+        assert registry.exists("sess-1") is True
+        assert registry.exists("ghost") is False
+        print("  [6] exists() returns True/False correctly")
+
+        # 7. registry survives a restart — data is in storage
+        registry2 = SessionRegistry(storage=backend)
+        assert registry2.exists("sess-1"), "data must survive registry restart via storage"
+        print("  [7] data survives SessionRegistry restart (reads from storage)")
+
+        # 8. delete() removes from registry and persists the removal
+        deleted = registry.delete("sess-1")
+        assert deleted is True
+        assert registry.exists("sess-1") is False
+        assert "sess-1" not in backend.read_registry()
+        print("  [8] delete() removes session and persists change to storage")
+
+        # 9. delete() returns False for unknown session
+        assert registry.delete("ghost") is False
+        print("  [9] delete() returns False for nonexistent session")
+
+    print("=== Step 7 SessionRegistry storage smoke PASSED ===")
