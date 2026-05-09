@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -8,8 +7,21 @@ from typing import Protocol, runtime_checkable
 from core.logging_config import get_logger
 from core.config import load_config
 
-from azure.storage.blob import BlobServiceClient
-from azure.core.exceptions import ResourceNotFoundError
+try:
+    from azure.storage.blob import BlobServiceClient
+except ModuleNotFoundError:
+    class BlobServiceClient:  # type: ignore[no-redef]
+        @staticmethod
+        def from_connection_string(*args, **kwargs):
+            raise ModuleNotFoundError(
+                "azure-storage-blob is required to use AzureBlobStorageBackend."
+            )
+
+try:
+    from azure.core.exceptions import ResourceNotFoundError
+except ModuleNotFoundError:
+    class ResourceNotFoundError(Exception):  # type: ignore[no-redef]
+        """Fallback exception used when azure-core is unavailable."""
 
 log = get_logger(__name__)
 
@@ -309,5 +321,6 @@ def create_storage_backend(backend: str, data_dir: Path) -> StorageBackend:
                 "Set it in .env (local testing) or as an ACA secret (production)."
             )
         return AzureBlobStorageBackend(connection_string=conn_str)
-    else:
+    if backend == "local":
         return LocalStorageBackend(data_dir=data_dir)
+    raise ValueError(f"Unsupported storage backend: {backend}")
