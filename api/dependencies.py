@@ -39,13 +39,12 @@ def init_services() -> None:
     Called once when the FastAPI app starts up.
     Builds the full service chain: ModelLoader → FaissManager → Retriever → ChatManager.
     """
-    global _model_loader, _faiss_manager, _retriever, _chat_manager, _session_registry, _storage_backend
+    global _model_loader, _faiss_manager, _retriever, _chat_manager, _session_registry, _storage
 
     log.info("Initializing services...")
 
     index_dir = Path(config["api"]["index_dir"])
     data_dir = Path(config["data"]["data_dir"])
-    history_dir = Path(config["data"]["history_dir"])
 
     configured_backend = config.get("storage", {}).get("backend", "local")
     app_env = os.environ.get("APP_ENVIRONMENT", "dev")
@@ -67,7 +66,6 @@ def init_services() -> None:
         log.warning("No existing FAISS index found — upload a document to get started", index_dir=str(index_dir))
 
     _chat_manager = ChatManager(retriever=_retriever, storage=_storage)
-    # _chat_manager._load_persisted_history()
 
     _session_registry = SessionRegistry(storage=_storage)
 
