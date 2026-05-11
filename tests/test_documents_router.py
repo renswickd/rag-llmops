@@ -8,6 +8,7 @@ The FastAPI app is built inline per-test so the real lifespan / init_services
 is never triggered.  All heavy I/O (DataIngestion, FAISS, SessionRegistry) is mocked.
 """
 import io
+from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
@@ -71,15 +72,22 @@ def mock_registry():
 
 
 @pytest.fixture
-def client(mock_faiss, mock_registry):
+def mock_storage():
+    """Stub StorageBackend — no real disk or blob I/O."""
+    return MagicMock()
+
+
+@pytest.fixture
+def client(mock_faiss, mock_registry, mock_storage):
     """Minimal FastAPI app with only the documents router; all deps overridden."""
     from api.routers.documents import router
-    from api.dependencies import get_faiss_manager, get_session_registry
+    from api.dependencies import get_faiss_manager, get_session_registry, get_storage
 
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
+    app.dependency_overrides[get_storage] = lambda: mock_storage
     return TestClient(app)
 
 
@@ -150,24 +158,25 @@ def test_response_body_contains_all_expected_fields(client, mock_faiss, stub_pip
     assert "ingested" in body["message"]
 
 
-def test_upload_archives_file_to_session_directory(client, mock_faiss, stub_pipeline, tmp_path):
+def test_upload_archives_file_to_session_directory(client, mock_faiss, stub_pipeline, mock_storage):
     content = b"important document content"
 
     resp = upload(client, filename="report.pdf", content=content)
 
     assert resp.status_code == 200
-    # Phase A: files are now stored under uploads/<session_id>/
-    archived = tmp_path / "uploads" / FAKE_SESSION_ID / "report.pdf"
-    assert archived.exists(), "File must be persisted under data/uploads/<session_id>/"
-    assert archived.read_bytes() == content
+    mock_storage.save_file.assert_called_once_with(
+        session_id=FAKE_SESSION_ID, filename="report.pdf", data=content
+    )
 
 
-def test_load_file_called_once_with_archive_path(client, mock_faiss, stub_pipeline, tmp_path):
-    """load_file must be called exactly once — not duplicated."""
+def test_load_file_called_once_with_archive_path(client, mock_faiss, stub_pipeline):
+    """load_file must be called exactly once with a temp Path, not duplicated."""
     upload(client, filename="doc.pdf")
 
-    expected_path = tmp_path / "uploads" / FAKE_SESSION_ID / "doc.pdf"
-    stub_pipeline.load_file.assert_called_once_with(expected_path)
+    stub_pipeline.load_file.assert_called_once()
+    actual_path = stub_pipeline.load_file.call_args[0][0]
+    assert isinstance(actual_path, Path)
+    assert actual_path.suffix == ".pdf"
 
 
 def test_chunk_documents_called_with_raw_docs(client, mock_faiss, stub_pipeline):

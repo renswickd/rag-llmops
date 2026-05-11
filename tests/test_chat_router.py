@@ -90,29 +90,39 @@ def mock_faiss_mgr():
 
 
 @pytest.fixture
-def client(mock_chat_mgr, mock_registry, mock_faiss_mgr):
+def mock_storage():
+    """Stub StorageBackend — list_session_files returns [] by default."""
+    m = MagicMock()
+    m.list_session_files.return_value = []
+    return m
+
+
+@pytest.fixture
+def client(mock_chat_mgr, mock_registry, mock_faiss_mgr, mock_storage):
     from api.routers.chat import router
-    from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager
+    from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_chat_manager] = lambda: mock_chat_mgr
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
     app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss_mgr
+    app.dependency_overrides[get_storage] = lambda: mock_storage
     return TestClient(app)
 
 
 @pytest.fixture
-def no_service_client(mock_registry, mock_faiss_mgr):
+def no_service_client(mock_registry, mock_faiss_mgr, mock_storage):
     """Client where get_chat_manager returns None — simulates uninitialised service."""
     from api.routers.chat import router
-    from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager
+    from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_chat_manager] = lambda: None
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
     app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss_mgr
+    app.dependency_overrides[get_storage] = lambda: mock_storage
     return TestClient(app)
 
 
@@ -306,18 +316,17 @@ def test_delete_session_clears_in_memory_chat_history(client, mock_chat_mgr):
     mock_chat_mgr.clear_session.assert_called_once_with(FAKE_SESSION_ID)
 
 
-def test_delete_session_rebuilds_faiss_when_sessions_remain(client, mock_registry, mock_faiss_mgr, tmp_path):
+def test_delete_session_rebuilds_faiss_when_sessions_remain(
+    client, mock_registry, mock_faiss_mgr, mock_storage
+):
     """When other sessions remain and their files exist, FAISS is rebuilt."""
     remaining_id = "upload_20260418_090000_abc00002"
     mock_registry.list_sessions.return_value = [
         {"session_id": remaining_id, "created_at": "2026-04-18T09:00:00+00:00", "documents": []},
     ]
-
-    # Create a real file so the rebuild loop processes it
-    session_dir = tmp_path / "uploads" / remaining_id
-    session_dir.mkdir(parents=True)
-    txt_file = session_dir / "doc.txt"
-    txt_file.write_text("some content")
+    # Storage returns one .txt file for the remaining session
+    mock_storage.list_session_files.return_value = ["doc.txt"]
+    mock_storage.read_file.return_value = b"some content"
 
     with patch("api.routers.chat.DataIngestion") as mock_di_cls:
         mock_di = MagicMock()

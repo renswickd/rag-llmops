@@ -2,7 +2,7 @@ from typing import Optional
 from datetime import datetime, timezone
 import json
 from dotenv import load_dotenv
-from pathlib import Path
+# from pathlib import Path
 
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -49,7 +49,7 @@ class ChatManager:
         max_tokens: int = config["llm"]["groq"]["max_output_tokens"],
         condense_question: bool = config["llm"]["groq"].get("condense_question", True),
         max_history_turns: int = config["llm"]["groq"].get("max_history_turns", 10),
-        history_dir: Optional[Path] = None,
+        storage=None,
         session_id: Optional[str] = None,
     ):
         
@@ -60,9 +60,12 @@ class ChatManager:
         self.max_tokens = max_tokens
         self.condense_question = condense_question
         self.max_history_turns = max_history_turns
-        self._history_dir = history_dir
-        if self._history_dir:
-            self._history_dir.mkdir(parents=True, exist_ok=True)
+        # self._history_dir = history_dir
+        
+        # if self._history_dir:
+        #     self._history_dir.mkdir(parents=True, exist_ok=True)
+
+        self._storage = storage
  
         self._sessions: dict[str, InMemoryChatMessageHistory] = {}
         self.session_id = session_id or generate_session_id("session")
@@ -140,41 +143,55 @@ class ChatManager:
             self.log.error("Chat turn failed", session_id=session_id, error=str(e))
             raise RagAssistantException("Chat turn failed", e) from e
     
-    def get_history(self, session_id: str) -> list[dict]:
-        """
-        Return stored messages for a session as a list of dicts.
-        Used by the history endpoint and frontend hydration.
-        Returns [] if no history exists.
-        """
-        if not self._history_dir:
-            return []
-        path = self._history_dir / f"{session_id}.jsonl"
-        if not path.exists():
-            return []
+    # def get_history(self, session_id: str) -> list[dict]:
+    #     """
+    #     Return stored messages for a session as a list of dicts.
+    #     Used by the history endpoint and frontend hydration.
+    #     Returns [] if no history exists.
+    #     """
+    #     if not self._history_dir:
+    #         return []
+    #     path = self._history_dir / f"{session_id}.jsonl"
+    #     if not path.exists():
+    #         return []
 
-        messages = []
-        with path.open(encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    messages.append(json.loads(line))
-        return messages
+    #     messages = []
+    #     with path.open(encoding="utf-8") as f:
+    #         for line in f:
+    #             line = line.strip()
+    #             if line:
+    #                 messages.append(json.loads(line))
+    #     return messages
+
+    def get_history(self, session_id: str) -> list[dict]:
+        if not self._storage:
+            return []
+        lines = self._storage.read_history(session_id)
+        return [json.loads(line) for line in lines]
     
+    # def clear_session(self, session_id: str) -> bool:
+    #     existed = session_id in self._sessions
+    #     if existed:
+    #         del self._sessions[session_id]
+    #         self.log.info("Session cleared", session_id=session_id)
+    #     if self._history_dir:
+    #         path = self._history_dir / f"{session_id}.jsonl"
+    #         if path.exists():
+    #             path.unlink()
+    #             self.log.info("History file deleted", session_id=session_id)
+    #             existed = True 
+    #     return existed
+ 
+    # def list_sessions(self) -> list[str]:
+    #     return list(self._sessions.keys())
     def clear_session(self, session_id: str) -> bool:
         existed = session_id in self._sessions
         if existed:
             del self._sessions[session_id]
             self.log.info("Session cleared", session_id=session_id)
-        if self._history_dir:
-            path = self._history_dir / f"{session_id}.jsonl"
-            if path.exists():
-                path.unlink()
-                self.log.info("History file deleted", session_id=session_id)
-                existed = True 
+        if self._storage:
+            self._storage.delete_history(session_id)
         return existed
- 
-    def list_sessions(self) -> list[str]:
-        return list(self._sessions.keys())
         
     # ---------------
     # Helper methods
@@ -215,42 +232,74 @@ class ChatManager:
             self.log.warning("Question condensation failed — using raw question", error=str(e))
             return question
     
-    def _persist_turn(self, session_id: str, human_content: str, ai_content: str, ) -> None:
-        """Append one human+AI turn to data/history/<session_id>.jsonl."""
-        if not self._history_dir:
-            return
+    # def _persist_turn(self, session_id: str, human_content: str, ai_content: str, ) -> None:
+    #     """Append one human+AI turn to data/history/<session_id>.jsonl."""
+    #     if not self._history_dir:
+    #         return
 
+    #     now = datetime.now(timezone.utc).isoformat()
+    #     path = self._history_dir / f"{session_id}.jsonl"
+    #     with path.open("a", encoding="utf-8") as f:
+    #         f.write(json.dumps({"role": "human", "content": human_content, "timestamp": now}) + "\n")
+    #         f.write(json.dumps({"role": "ai",    "content": ai_content,    "timestamp": now}) + "\n")
+
+    def _persist_turn(self, session_id: str, human_content: str, ai_content: str) -> None:
+        if not self._storage:
+            return
         now = datetime.now(timezone.utc).isoformat()
-        path = self._history_dir / f"{session_id}.jsonl"
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"role": "human", "content": human_content, "timestamp": now}) + "\n")
-            f.write(json.dumps({"role": "ai",    "content": ai_content,    "timestamp": now}) + "\n")
+        self._storage.append_history(session_id,json.dumps({"role": "human", "content": human_content, "timestamp": now}))
+        self._storage.append_history(session_id,json.dumps({"role": "ai", "content": ai_content, "timestamp": now}))
 
-    def _load_persisted_history(self) -> None:
+    # def _load_persisted_history(self) -> None:
+    #     """
+    #     Scan self._history_dir for *.jsonl files and reconstruct InMemoryChatMessageHistory     for each session found. Called once at startup.
+    #     """
+    #     if not self._history_dir or not self._history_dir.exists():
+    #         return
+
+    #     loaded = 0
+    #     for path in self._history_dir.glob("*.jsonl"):
+    #         session_id = path.stem
+    #         history = InMemoryChatMessageHistory()
+    #         with path.open(encoding="utf-8") as f:
+    #             for line in f:
+    #                 line = line.strip()
+    #                 if not line:
+    #                     continue
+    #                 msg = json.loads(line)
+    #                 if msg["role"] == "human":
+    #                     history.add_message(HumanMessage(content=msg["content"]))
+    #                 else:
+    #                     history.add_message(AIMessage(content=msg["content"]))
+    #         self._sessions[session_id] = history
+    #         loaded += 1
+    #     self.log.info("Persisted history loaded", sessions_loaded=loaded)
+
+
+    def _load_persisted_history(self, known_session_ids: list[str] | None = None) -> None:
         """
-        Scan self._history_dir for *.jsonl files and reconstruct InMemoryChatMessageHistory     for each session found. Called once at startup.
+        Load persisted history into memory at startup.
+
+        known_session_ids: list of session IDs from the registry.  If provided, only these sessions are loaded.  If None, no history is loaded (no-op).
         """
-        if not self._history_dir or not self._history_dir.exists():
+        if not self._storage or not known_session_ids:
             return
-
         loaded = 0
-        for path in self._history_dir.glob("*.jsonl"):
-            session_id = path.stem
+        for session_id in known_session_ids:
+            lines = self._storage.read_history(session_id)
+            if not lines:
+                continue
             history = InMemoryChatMessageHistory()
-            with path.open(encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    msg = json.loads(line)
-                    if msg["role"] == "human":
-                        history.add_message(HumanMessage(content=msg["content"]))
-                    else:
-                        history.add_message(AIMessage(content=msg["content"]))
+            for line in lines:
+                msg = json.loads(line)
+                if msg["role"] == "human":
+                    history.add_message(HumanMessage(content=msg["content"]))
+                else:
+                    history.add_message(AIMessage(content=msg["content"]))
             self._sessions[session_id] = history
             loaded += 1
         self.log.info("Persisted history loaded", sessions_loaded=loaded)
-            
+
     # ----------
     # Chains
     # ----------
@@ -270,29 +319,100 @@ class ChatManager:
         return STANDALONE_PROMPT | self._llm | StrOutputParser()
 
 if __name__ == "__main__":
-    # CMObj = ChatManager(retriever=None)
-
+    import sys
+    import tempfile
     from pathlib import Path
     from langchain_core.documents import Document
     from ingestion.faiss_manager import FaissManager
- 
+    from core.storage import LocalStorageBackend
+
+    # ── Phase 5 Step 6: storage integration smoke test ────────────────────────
+    # Tests _persist_turn, get_history, _load_persisted_history, clear_session
+    # against LocalStorageBackend without requiring a live LLM or FAISS index.
+
+    print("=== Step 6 storage smoke ===")
+
     sample_docs = [
         Document(page_content="FAISS enables fast vector similarity search at scale.", metadata={"source": "faiss.txt"}),
         Document(page_content="RAG combines retrieval with generation for accurate answers.", metadata={"source": "rag.txt"}),
         Document(page_content="Groq provides ultra-fast LLM inference via dedicated hardware.", metadata={"source": "groq.txt"}),
     ]
- 
-    manager = FaissManager(index_dir=Path("faiss_smoke_index"))
-    retriever = Retriever(faiss_manager=manager, top_k=2)
-    retriever.initialize(docs=sample_docs)
- 
-    cm = ChatManager(retriever=retriever)
-    sid = "smoke-session-1"
- 
-    q1 = "What is FAISS?"
-    r1 = cm.chat(q1, session_id=sid)
-    print(f"\nQ: {q1}\nA: {r1['answer']}\nSources: {r1['sources']}\n")
- 
-    q2 = "How does it compare to RAG?"
-    r2 = cm.chat(q2, session_id=sid)
-    print(f"Q: {q2}\nA: {r2['answer']}\nStandalone Q sent to retriever: {r2['standalone_q']}\n")    
+
+    with tempfile.TemporaryDirectory() as tmp:
+        backend = LocalStorageBackend(data_dir=Path(tmp))
+        manager = FaissManager(index_dir=Path(tmp) / "faiss")
+        retriever = Retriever(faiss_manager=manager, top_k=2)
+        retriever.initialize(docs=sample_docs)
+
+        cm = ChatManager(retriever=retriever, storage=backend)
+        sid = "smoke-storage-1"
+
+        # 1. chat() → _persist_turn() → storage
+        q1 = "What is FAISS?"
+        r1 = cm.chat(q1, session_id=sid)
+        raw_lines = backend.read_history(sid)
+        assert len(raw_lines) == 2, f"Expected 2 history lines after 1 turn, got {len(raw_lines)}"
+        assert json.loads(raw_lines[0])["role"] == "human"
+        assert json.loads(raw_lines[1])["role"] == "ai"
+        print(f"  [1] _persist_turn writes both messages to storage  ({len(raw_lines)} lines)")
+
+        # Second turn appends — does not overwrite
+        q2 = "How does it compare to RAG?"
+        cm.chat(q2, session_id=sid)
+        raw_lines = backend.read_history(sid)
+        assert len(raw_lines) == 4, f"Expected 4 lines after 2 turns, got {len(raw_lines)}"
+        print(f"  [2] second turn appended correctly              ({len(raw_lines)} lines)")
+
+        # 2. get_history() reads back from storage
+        history = cm.get_history(sid)
+        assert len(history) == 4
+        assert history[0]["content"] == q1
+        assert history[0]["role"] == "human"
+        print(f"  [3] get_history() reads {len(history)} messages from storage")
+
+        # 3. _load_persisted_history() restores sessions in a fresh ChatManager
+        cm2 = ChatManager(retriever=retriever, storage=backend)
+        assert sid not in cm2._sessions, "Fresh ChatManager must start with empty sessions"
+        cm2._load_persisted_history(known_session_ids=[sid])
+        assert sid in cm2._sessions, "_load_persisted_history must populate _sessions"
+        assert len(cm2._sessions[sid].messages) == 4
+        print(f"  [4] _load_persisted_history restored {len(cm2._sessions[sid].messages)} messages")
+
+        # 4. clear_session() removes from memory AND deletes from storage
+        existed = cm.clear_session(sid)
+        assert existed, "clear_session must return True when session existed"
+        assert sid not in cm._sessions, "clear_session must remove session from _sessions"
+        assert backend.read_history(sid) == [], "clear_session must delete history from storage"
+        print("  [5] clear_session removed session from memory and storage")
+
+        # 5. clear_session() on unknown session returns False and does not crash
+        result = cm.clear_session("nonexistent-session")
+        assert result is False
+        print("  [6] clear_session on unknown session returns False without crashing")
+
+    print("=== Step 6 storage smoke PASSED ===\n")
+
+    # ── LLM pipeline smoke test (requires GROQ_API_KEY in .env) ──────────────
+    if not __import__("os").getenv("GROQ_API_KEY"):
+        print("GROQ_API_KEY not set — skipping LLM pipeline smoke test")
+        sys.exit(0)
+
+    print("=== LLM pipeline smoke (storage + retrieval) ===")
+    with tempfile.TemporaryDirectory() as tmp:
+        backend = LocalStorageBackend(data_dir=Path(tmp))
+        manager = FaissManager(index_dir=Path(tmp) / "faiss")
+        retriever = Retriever(faiss_manager=manager, top_k=2)
+        retriever.initialize(docs=sample_docs)
+
+        cm = ChatManager(retriever=retriever, storage=backend)
+        sid = "smoke-llm-1"
+
+        r1 = cm.chat("What is FAISS?", session_id=sid)
+        print(f"\nQ: What is FAISS?\nA: {r1['answer']}\nSources: {r1['sources']}")
+        assert backend.read_history(sid), "History must be persisted after chat()"
+
+        r2 = cm.chat("How does it compare to RAG?", session_id=sid)
+        print(f"\nQ: How does it compare to RAG?\nA: {r2['answer']}\nStandalone Q: {r2['standalone_q']}")
+        assert len(backend.read_history(sid)) == 4, "Two turns must produce 4 history lines"
+
+    print("\n=== LLM pipeline smoke PASSED ===")

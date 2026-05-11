@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -5,6 +6,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, AIMessage
 
 from core.exceptions import RagAssistantException
+from core.storage import LocalStorageBackend
 from conversation.chat_manager import ChatManager
 
 
@@ -129,21 +131,17 @@ def test_persist_turn_writes_jsonl_file(
     mock_build_answer_chain.return_value = MagicMock()
     mock_build_condense_chain.return_value = MagicMock()
 
-    history_dir = tmp_path / "history"
+    backend = LocalStorageBackend(tmp_path)
     manager = ChatManager(
         retriever=mock_retriever,
         session_id="test-session",
-        history_dir=history_dir,
+        storage=backend,
     )
 
     manager._persist_turn("test-session", "Hello", "Hi there")
 
-    jsonl_path = history_dir / "test-session.jsonl"
-    assert jsonl_path.exists()
-    lines = jsonl_path.read_text().strip().splitlines()
+    lines = backend.read_history("test-session")
     assert len(lines) == 2
-
-    import json
     assert json.loads(lines[0])["role"] == "human"
     assert json.loads(lines[1])["role"] == "ai"
 
@@ -160,23 +158,18 @@ def test_get_history_reads_jsonl_file(
     mock_retriever,
     tmp_path,
 ):
-    import json
     mock_load_llm.return_value = MagicMock()
     mock_build_answer_chain.return_value = MagicMock()
     mock_build_condense_chain.return_value = MagicMock()
 
-    history_dir = tmp_path / "history"
-    history_dir.mkdir()
-    jsonl_path = history_dir / "test-session.jsonl"
-    jsonl_path.write_text(
-        json.dumps({"role": "human", "content": "Q?", "timestamp": "2026-01-01T00:00:00+00:00"}) + "\n"
-        + json.dumps({"role": "ai",    "content": "A.", "timestamp": "2026-01-01T00:00:01+00:00"}) + "\n"
-    )
+    backend = LocalStorageBackend(tmp_path)
+    backend.append_history("test-session", json.dumps({"role": "human", "content": "Q?", "timestamp": "2026-01-01T00:00:00+00:00"}))
+    backend.append_history("test-session", json.dumps({"role": "ai",    "content": "A.", "timestamp": "2026-01-01T00:00:01+00:00"}))
 
     manager = ChatManager(
         retriever=mock_retriever,
         session_id="test-session",
-        history_dir=history_dir,
+        storage=backend,
     )
 
     messages = manager.get_history("test-session")
@@ -205,7 +198,7 @@ def test_get_history_returns_empty_list_when_no_file(
     manager = ChatManager(
         retriever=mock_retriever,
         session_id="test-session",
-        history_dir=tmp_path / "history",
+        storage=LocalStorageBackend(tmp_path),
     )
 
     assert manager.get_history("nonexistent-session") == []
@@ -223,26 +216,22 @@ def test_load_persisted_history_restores_sessions(
     mock_retriever,
     tmp_path,
 ):
-    import json
     mock_load_llm.return_value = MagicMock()
     mock_build_answer_chain.return_value = MagicMock()
     mock_build_condense_chain.return_value = MagicMock()
 
-    history_dir = tmp_path / "history"
-    history_dir.mkdir()
-    (history_dir / "session-abc.jsonl").write_text(
-        json.dumps({"role": "human", "content": "Hi", "timestamp": "2026-01-01T00:00:00+00:00"}) + "\n"
-        + json.dumps({"role": "ai",  "content": "Hello", "timestamp": "2026-01-01T00:00:01+00:00"}) + "\n"
-    )
+    backend = LocalStorageBackend(tmp_path)
+    backend.append_history("session-abc", json.dumps({"role": "human", "content": "Hi",    "timestamp": "2026-01-01T00:00:00+00:00"}))
+    backend.append_history("session-abc", json.dumps({"role": "ai",    "content": "Hello", "timestamp": "2026-01-01T00:00:01+00:00"}))
 
     manager = ChatManager(
         retriever=mock_retriever,
         session_id="test-session",
-        history_dir=history_dir,
+        storage=backend,
     )
-    manager._load_persisted_history()
+    manager._load_persisted_history(known_session_ids=["session-abc"])
 
-    assert "session-abc" in manager.list_sessions()
+    assert "session-abc" in manager._sessions
     assert len(manager._sessions["session-abc"].messages) == 2
 
 
@@ -268,12 +257,12 @@ def test_clear_session_removes_existing_session(
 
     manager._get_or_create_history_session("test-session")
 
-    assert "test-session" in manager.list_sessions()
+    assert "test-session" in manager._sessions
 
     cleared = manager.clear_session("test-session")
 
     assert cleared is True
-    assert "test-session" not in manager.list_sessions()
+    assert "test-session" not in manager._sessions
 
 
 @patch("conversation.chat_manager.generate_session_id", return_value="test-session")
@@ -288,25 +277,20 @@ def test_clear_session_deletes_jsonl_file(
     mock_retriever,
     tmp_path,
 ):
-    import json
     mock_load_llm.return_value = MagicMock()
     mock_build_answer_chain.return_value = MagicMock()
     mock_build_condense_chain.return_value = MagicMock()
 
-    history_dir = tmp_path / "history"
-    history_dir.mkdir()
-    jsonl_path = history_dir / "test-session.jsonl"
-    jsonl_path.write_text(
-        json.dumps({"role": "human", "content": "Hi", "timestamp": "2026-01-01T00:00:00+00:00"}) + "\n"
-    )
+    backend = LocalStorageBackend(tmp_path)
+    backend.append_history("test-session", json.dumps({"role": "human", "content": "Hi", "timestamp": "2026-01-01T00:00:00+00:00"}))
 
     manager = ChatManager(
         retriever=mock_retriever,
         session_id="test-session",
-        history_dir=history_dir,
+        storage=backend,
     )
     manager._get_or_create_history_session("test-session")
 
     manager.clear_session("test-session")
 
-    assert not jsonl_path.exists()
+    assert backend.read_history("test-session") == []

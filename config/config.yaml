@@ -55,3 +55,12 @@ api:
   port: 8000
   debug: false
   index_dir: faiss_index
+
+storage:
+  backend: local   # Options: local | azure_blob
+                   # Set to azure_blob in production (APP_ENVIRONMENT=production)
+  blob_containers:
+    uploads: uploads
+    history: history
+    registry: registry
+    registry_blob_name: session_registry.json

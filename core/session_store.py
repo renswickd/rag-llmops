@@ -1,7 +1,6 @@
 import json
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from core.logging_config import get_logger
@@ -30,29 +29,34 @@ class SessionRegistry:
     }
     """
 
-    def __init__(self, data_dir: Path):
-        self._path = Path(data_dir) / _REGISTRY_FILENAME
+    def __init__(self, storage) -> None:
+        """
+        Args:
+            storage: Any object satisfying the StorageBackend protocol.
+                     Injected from api/dependencies.py.
+        """
+        self._storage = storage
         self._lock = threading.Lock()
-        self._ensure_file()
-        log.info("SessionRegistry initialised", path=str(self._path))
+        self._ensure_registry()
+        log.info("SessionRegistry initialised")
 
-    def _ensure_file(self) -> None:
-        """Create the registry file with an empty dict if it does not exist."""
-        if not self._path.exists():
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text("{}", encoding="utf-8")
+    def _ensure_registry(self) -> None:
+        """Create an empty registry if none exists."""
+        existing = self._storage.read_registry()
+        if existing is None:
+            self._storage.save_registry("{}")
 
     def _read(self) -> dict:
-        return json.loads(self._path.read_text(encoding="utf-8"))
+        raw = self._storage.read_registry()
+        if raw is None:
+            return {}
+        return json.loads(raw)
 
     def _write(self, data: dict) -> None:
-        self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self._storage.save_registry(json.dumps(data, indent=2))
 
     def register(self, session_id: str, file_name: str, chunks_created: int) -> None:
-        """
-        Add a document to a session entry, creating the session if it does not exist.
-        Safe to call multiple times for the same session (additional uploads).
-        """
+        """Add a document to a session, creating the session entry if needed."""
         with self._lock:
             data = self._read()
             if session_id not in data:
@@ -66,7 +70,8 @@ class SessionRegistry:
                 "chunks_created": chunks_created,
             })
             self._write(data)
-            log.info("Session registered", session_id=session_id, file_name=file_name, chunks=chunks_created)
+            log.info("Session registered", session_id=session_id, file_name=file_name,
+                     chunks=chunks_created)
 
     def list_sessions(self) -> list[dict]:
         """Return all session metadata, ordered newest-first."""

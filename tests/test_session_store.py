@@ -2,20 +2,22 @@
 Unit tests for core.session_store.SessionRegistry
 
 Coverage:
-  - File creation on first use
+  - Registry creation on first use (no pre-existing data)
   - register() — new session and subsequent uploads to same session
   - list_sessions() — ordering (newest-first) and empty case
   - get() — found and not found
   - delete() — removes entry, returns True/False
   - exists() — True/False
-  - Persistence — data survives a second registry instance pointed at the same file
+  - Persistence — data survives a second registry instance on the same storage backend
 """
 import json
+import time
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Suppress structlog noise in tests
+from core.storage import LocalStorageBackend
+
+
 @pytest.fixture(autouse=True)
 def silence_log():
     with patch("core.session_store.log", MagicMock()):
@@ -23,38 +25,40 @@ def silence_log():
 
 
 @pytest.fixture
-def registry(tmp_path):
-    from core.session_store import SessionRegistry
-    return SessionRegistry(data_dir=tmp_path)
+def backend(tmp_path):
+    return LocalStorageBackend(tmp_path)
 
 
 @pytest.fixture
-def registry_path(tmp_path) -> Path:
-    return tmp_path / "session_registry.json"
+def registry(backend):
+    from core.session_store import SessionRegistry
+    return SessionRegistry(storage=backend)
 
 
 # ─────────────────────────────────────────────
 # Initialisation
 # ─────────────────────────────────────────────
 
-def test_creates_registry_file_on_init(tmp_path, registry_path):
+def test_creates_registry_on_init(backend):
     from core.session_store import SessionRegistry
-    assert not registry_path.exists()
+    assert backend.read_registry() is None
 
-    SessionRegistry(data_dir=tmp_path)
+    SessionRegistry(storage=backend)
 
-    assert registry_path.exists()
-    assert json.loads(registry_path.read_text()) == {}
+    raw = backend.read_registry()
+    assert raw is not None
+    assert json.loads(raw) == {}
 
 
-def test_does_not_overwrite_existing_registry(tmp_path, registry_path):
-    """A second init on the same directory must not reset an existing registry."""
+def test_does_not_overwrite_existing_registry(tmp_path):
+    """A second init on the same storage backend must not reset an existing registry."""
     from core.session_store import SessionRegistry
 
-    existing_data = {"sess-1": {"session_id": "sess-1", "created_at": "2026-01-01T00:00:00+00:00", "documents": []}}
-    registry_path.write_text(json.dumps(existing_data))
+    backend = LocalStorageBackend(tmp_path)
+    existing = {"sess-1": {"session_id": "sess-1", "created_at": "2026-01-01T00:00:00+00:00", "documents": []}}
+    backend.save_registry(json.dumps(existing))
 
-    reg = SessionRegistry(data_dir=tmp_path)
+    reg = SessionRegistry(storage=backend)
 
     assert reg.exists("sess-1")
 
@@ -100,10 +104,10 @@ def test_register_preserves_creation_timestamp_on_second_upload(registry):
     assert ts_before == ts_after
 
 
-def test_register_persists_to_disk(registry, registry_path):
+def test_register_persists_to_storage(registry, backend):
     registry.register("sess-persist", "file.txt", chunks_created=3)
 
-    raw = json.loads(registry_path.read_text())
+    raw = json.loads(backend.read_registry())
     assert "sess-persist" in raw
 
 
@@ -127,11 +131,8 @@ def test_list_sessions_returns_all_registered_sessions(registry):
 
 def test_list_sessions_ordered_newest_first(registry):
     """Entries are sorted by created_at descending — most recent first."""
-    from core.session_store import SessionRegistry
-    import time
-
     registry.register("sess-old", "old.pdf", 1)
-    time.sleep(0.01)  # ensure different timestamps
+    time.sleep(0.01)
     registry.register("sess-new", "new.pdf", 2)
 
     sessions = registry.list_sessions()
@@ -171,11 +172,11 @@ def test_delete_returns_false_for_unknown_session(registry):
     assert registry.delete("ghost-session") is False
 
 
-def test_delete_persists_removal_to_disk(registry, registry_path):
+def test_delete_persists_removal_to_storage(registry, backend):
     registry.register("sess-disk-del", "file.pdf", 2)
     registry.delete("sess-disk-del")
 
-    raw = json.loads(registry_path.read_text())
+    raw = json.loads(backend.read_registry())
     assert "sess-disk-del" not in raw
 
 
@@ -203,12 +204,13 @@ def test_exists_returns_false_after_delete(registry):
 # ─────────────────────────────────────────────
 
 def test_data_survives_registry_restart(tmp_path):
-    """A second registry instance on the same directory reads the existing data."""
+    """A second registry instance on the same storage backend reads the existing data."""
     from core.session_store import SessionRegistry
 
-    reg1 = SessionRegistry(data_dir=tmp_path)
+    backend = LocalStorageBackend(tmp_path)
+    reg1 = SessionRegistry(storage=backend)
     reg1.register("sess-survive", "important.pdf", 12)
 
-    reg2 = SessionRegistry(data_dir=tmp_path)
+    reg2 = SessionRegistry(storage=backend)
     assert reg2.exists("sess-survive")
     assert reg2.get("sess-survive")["documents"][0]["file_name"] == "important.pdf"

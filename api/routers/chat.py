@@ -1,10 +1,13 @@
+import tempfile
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager
+from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 from api.schemas.chat import ChatRequest, ChatResponse, HistoryResponse, SessionListResponse, SessionMetadata
 from conversation.chat_manager import ChatManager
 from ingestion.faiss_manager import FaissManager
 from ingestion.data_ingestion import DataIngestion
+from core.storage import StorageBackend
 from core.exceptions import RagAssistantException
 from core.session_store import SessionRegistry
 from core.logging_config import get_logger
@@ -70,12 +73,13 @@ def delete_session(
     chat_mgr: ChatManager = Depends(get_chat_manager),
     registry: SessionRegistry = Depends(get_session_registry),
     faiss_mgr: FaissManager = Depends(get_faiss_manager),
+    storage: StorageBackend = Depends(get_storage),
 ):
     """
     Fully delete a session:
     1. Remove from session registry
     2. Remove archived files from data/uploads/<session_id>/
-    3. Rebuild the FAISS index from remaining sessions
+    3. Rebuild the FAISS index from remaining sessions from Azure Files mount point
     4. Clear conversation history from memory
     """
     if chat_mgr is None or registry is None or faiss_mgr is None:
@@ -89,11 +93,8 @@ def delete_session(
         registry.delete(session_id)
 
         # 2. Remove archived files
-        uploads_dir = Path(config["data"]["data_dir"]) / "uploads"
-        session_dir = uploads_dir / session_id
-        if session_dir.exists():
-            shutil.rmtree(session_dir)
-            log.info("Session files deleted", session_id=session_id, path=str(session_dir))
+        storage.delete_session_files(session_id)
+        log.info("Session files deleted from storage", session_id=session_id)
 
         # 3. Rebuild FAISS index from remaining sessions
         remaining_sessions = registry.list_sessions()
@@ -103,22 +104,32 @@ def delete_session(
             all_chunks = []
             for session_meta in remaining_sessions:
                 sid = session_meta["session_id"]
-                sid_dir = uploads_dir / sid
-                if not sid_dir.exists():
-                    continue
-                for file_path in sid_dir.iterdir():
-                    if file_path.is_file() and file_path.suffix.lower() in {".pdf", ".txt", ".md"}:
+                filenames = storage.list_session_files(sid)
+                for filename in filenames:
+                    suffix = Path(filename).suffix.lower()
+                    if suffix not in {".pdf", ".txt", ".md"}:
+                        continue
+                    # Download the file to a temp location for DataIngestion
+                    file_bytes = storage.read_file(sid, filename)
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                        tmp.write(file_bytes)
+                        tmp_path = Path(tmp.name)
+                    try:
                         di = DataIngestion(
-                            data_dir=sid_dir,
+                            data_dir=tmp_path.parent,
                             faiss_manager=faiss_mgr,
                             session_id=sid,
                         )
-                        raw_docs = di.load_file(file_path)
+                        raw_docs = di.load_file(tmp_path)
                         chunks = di.chunk_documents(raw_docs)
                         all_chunks.extend(chunks)
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+
             if all_chunks:
                 faiss_mgr.create(all_chunks)
-                log.info("FAISS index rebuilt", total_chunks=len(all_chunks), remaining_sessions=len(remaining_sessions))
+                log.info("FAISS index rebuilt", total_chunks=len(all_chunks),
+                         remaining_sessions=len(remaining_sessions))
         else:
             log.info("No remaining sessions — FAISS index is now empty")
 
