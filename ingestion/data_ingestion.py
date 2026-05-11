@@ -6,7 +6,7 @@ from typing import Optional
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import TextLoader, PyPDFLoader, UnstructuredMarkdownLoader
+from langchain_community.document_loaders import TextLoader, PyPDFLoader
 
 from core.config import load_config
 from core.logging_config import get_logger
@@ -44,39 +44,6 @@ class DataIngestion:
         if not self.data_dir.exists():
             raise RagAssistantException(f"Data directory does not exist: {self.data_dir}")
         self.log.info("DataIngestion initialized", data_dir=str(self.data_dir), chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
-
-    
-    def load_file(self, file_path: Path) -> List[Document]:
-        """
-        Load a single file and attach standard source metadata to every document.
-
-        Raises RagAssistantException for unsupported extensions or read failures.
-        Used directly by the upload endpoint and internally by load_documents().
-        """
-        file_path = Path(file_path)
-        suffix = file_path.suffix.lower()
-
-        if suffix == ".txt":
-            loader = TextLoader(str(file_path), encoding="utf-8")
-        elif suffix == ".md":
-            loader = UnstructuredMarkdownLoader(str(file_path))
-        elif suffix == ".pdf":
-            loader = PyPDFLoader(str(file_path))
-        else:
-            raise RagAssistantException(f"Unsupported file type: '{suffix}'")
-
-        try:
-            docs = loader.load()
-            for doc in docs:
-                doc.metadata["source"] = str(file_path)
-                doc.metadata["file_name"] = file_path.name
-            self.log.info("File loaded", file=str(file_path), num_docs=len(docs))
-            return docs
-        except RagAssistantException:
-            raise
-        except Exception as e:
-            self.log.error("Failed to load file", file=str(file_path), error=str(e))
-            raise RagAssistantException(f"Failed to load file: {file_path.name}", e)
 
     def load_documents(self) -> List[Document]:
         try:
@@ -149,10 +116,8 @@ class DataIngestion:
             file_path = Path(file_path)
             suffix = file_path.suffix.lower()
 
-            if suffix == ".txt":
+            if suffix in {".txt", ".md"}:
                 loader = TextLoader(str(file_path), encoding="utf-8")
-            elif suffix == ".md":
-                loader = UnstructuredMarkdownLoader(str(file_path))
             elif suffix == ".pdf":
                 loader = PyPDFLoader(str(file_path))
             else:
