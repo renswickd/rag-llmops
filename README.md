@@ -13,6 +13,7 @@ The goal of this project is to build and deploy a full-stack RAG application tha
 - Multi-turn conversational retrieval with question condensing
 - Per-session document isolation — each session only retrieves from its own documents
 - Persistent conversation history that survives backend restarts
+- Cloud storage abstraction for session data across local disk and Azure Blob Storage
 - A modern React frontend with dark/light mode and session management
 - Containerised deployment on Azure Container Apps
 - LLMOps practices: structured logging, configuration management, and automated testing
@@ -30,15 +31,15 @@ api/               FastAPI application
   schemas/         Pydantic request/response models
   dependencies.py  Service singleton initialisation
   main.py          App entry point with lifespan management
-conversation/      Multi-turn chat manager with JSONL history persistence
+conversation/      Multi-turn chat manager with storage-backed history persistence
 ingestion/         Document loading, chunking, FAISS vector store, retriever
-core/              Config loader, structured logging, custom exceptions, session registry
+core/              Config loader, structured logging, storage abstraction, custom exceptions, session registry
 utils/             LLM and embeddings model loader, session ID generation
 config/            config.yaml — all tunable parameters
 data/
-  uploads/         Archived uploaded files, namespaced by session_id
-  history/         Per-session conversation history as JSONL files
-  session_registry.json  Authoritative session list with metadata
+  uploads/         LocalStorageBackend uploads root (used when storage.backend=local)
+  history/         LocalStorageBackend history root (used when storage.backend=local)
+  session_registry.json  LocalStorageBackend registry file (used when storage.backend=local)
 tests/             pytest unit test suite
 ```
 
@@ -52,7 +53,8 @@ tests/             pytest unit test suite
 | API framework | FastAPI + Uvicorn |
 | LLM | Groq (`openai/gpt-oss-20b`) via LangChain |
 | Embeddings | HuggingFace `google/embeddinggemma-300m` |
-| Vector store | FAISS (local filesystem) |
+| Vector store | FAISS (local filesystem; Azure Files mount in production) |
+| Session data storage | `StorageBackend` abstraction: local filesystem or Azure Blob Storage |
 | Document parsing | PyMuPDF, PyPDF |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
 | Logging | structlog (structured JSON) |
@@ -77,7 +79,8 @@ tests/             pytest unit test suite
 | Image registry | Azure Container Registry (`ragllmopsacr.azurecr.io`) |
 | CI | GitHub Actions (test on every push; build + push to ACR on `main`) |
 | Backend hosting | Azure Container Apps (`rag-llmops-backend`, Consumption plan) |
-| Persistent storage | Azure Files share (`faiss-index`) mounted at `/app/faiss_index` |
+| Session data persistence | Azure Blob Storage containers: `uploads`, `history`, `registry` |
+| FAISS persistence | Azure Files share (`faiss-index`) mounted at `/app/faiss_index` |
 | Observability | Log Analytics + Application Insights (`rag-llmops-insights`) |
 | Frontend hosting (pending) | Azure Static Web Apps |
 
@@ -109,7 +112,7 @@ session_id format:  upload_YYYYMMDD_HHMMSS_<8hex>
 e.g.                upload_20260418_143022_a3f9c1b7
 ```
 
-Sessions are tracked in a **session registry** (`data/session_registry.json`) written at upload time — not at first chat — so `GET /chat/sessions` always reflects all uploaded documents immediately.
+Sessions are tracked in a **session registry** written at upload time — not at first chat — so `GET /chat/sessions` always reflects all uploaded documents immediately. In local mode this lives at `data/session_registry.json`; in production it is stored as the `session_registry.json` blob in the `registry` container.
 
 ### Document isolation
 
@@ -117,15 +120,15 @@ Each uploaded document's chunks are tagged with their `session_id` in FAISS meta
 
 ### History persistence
 
-Conversation turns are appended to `data/history/<session_id>.jsonl` after each chat response. On backend startup, all JSONL files are scanned and loaded back into memory. Deleting a session removes the JSONL file.
+Conversation turns are appended to the configured storage backend after each chat response. In local mode this is `data/history/<session_id>.jsonl`; in production it is the `<session_id>.jsonl` blob in the `history` container. On backend startup, persisted history is loaded back into memory using the session IDs from the registry.
 
 ### Full delete
 
 `DELETE /chat/sessions/{session_id}` performs a complete teardown:
 1. Remove from the session registry
-2. Delete `data/uploads/<session_id>/` from disk
+2. Delete archived files from the configured storage backend
 3. Rebuild the FAISS index from the remaining sessions
-4. Clear the in-memory chat history
+4. Delete persisted chat history and clear the in-memory chat history
 
 ---
 
@@ -134,8 +137,8 @@ Conversation turns are appended to `data/history/<session_id>.jsonl` after each 
 ```
 Upload file
     └── Generate session_id (upload_YYYYMMDD_HHMMSS_<8hex>)
-    └── Archive to data/uploads/<session_id>/<filename>
-    └── Write session metadata to session_registry.json
+    └── Archive to configured storage backend
+    └── Write session metadata to configured registry backend
     └── Parse (PDF / TXT / MD)
     └── Chunk (RecursiveCharacterTextSplitter, 1000 chars / 150 overlap)
     └── Tag each chunk with session_id in metadata
@@ -147,7 +150,7 @@ Ask question
     └── Retrieve top-k documents filtered by session_id (similarity / MMR / score-threshold)
     └── Format context with source citations
     └── Generate grounded answer (Groq LLM)
-    └── Append human + AI turn to data/history/<session_id>.jsonl
+    └── Append human + AI turn to configured history backend
     └── Return answer + sources + history length
 ```
 
@@ -256,6 +259,7 @@ Key settings in `config/config.yaml`:
 | `data` | `data_dir` | `data` | Root directory for uploads, history, and registry |
 | `data` | `history_dir` | `data/history` | Directory for per-session JSONL history files |
 | `data` | `uploads_subdir` | `uploads` | Sub-directory under `data_dir` for archived files |
+| `storage` | `backend` | `local` | Storage backend selector: `local` or `azure_blob` |
 | `data_ingestion` | `chunk_size` | `1000` | Characters per chunk |
 | `data_ingestion` | `chunk_overlap` | `150` | Overlap between chunks |
 | `retriever` | `default_search_type` | `similarity` | `similarity`, `mmr`, or `similarity_score_threshold` |
@@ -269,18 +273,19 @@ Key settings in `config/config.yaml`:
 |-----------|---------|--------|
 | Core infrastructure | YAML config loader, structlog JSON logging, `RagAssistantException` with traceback capture | Done |
 | Model loader | Groq `ChatGroq` LLM + HuggingFace `HuggingFaceEmbeddings` initialisation with config-driven parameters | Done |
-| Document ingestion | Load PDF / TXT / MD via LangChain loaders, archive to `data/uploads/<session_id>/`, chunk with `RecursiveCharacterTextSplitter` | Done |
+| Document ingestion | Load PDF / TXT / MD via LangChain loaders, archive to the configured storage backend, chunk with `RecursiveCharacterTextSplitter` | Done |
 | FAISS vector store | Create, load, update, and clear FAISS index; persist to disk; per-session chunk metadata | Done |
-| Session registry | `core/session_store.py` — JSON-backed registry written at upload time; returned by `list_sessions`; cleaned up on delete | Done |
+| Storage abstraction | `core/storage.py` — `StorageBackend` protocol with `LocalStorageBackend` and `AzureBlobStorageBackend`; factory-selected at startup | Done |
+| Session registry | `core/session_store.py` — registry written via the storage backend at upload time; returned by `list_sessions`; cleaned up on delete | Done |
 | Retrieval pipeline | Three search modes: `similarity`, `mmr`, `similarity_score_threshold`; per-session filtering via chunk metadata | Done |
 | Conversation chain | `ChatManager` with per-session `InMemoryChatMessageHistory`, sliding window, standalone question condensing via LangChain LCEL | Done |
-| History persistence | Turns appended to `data/history/<session_id>.jsonl`; loaded on startup; deleted with session | Done |
+| History persistence | Turns appended via the storage backend; loaded on startup from registry-known session IDs; deleted with session | Done |
 | History endpoint | `GET /chat/sessions/{session_id}/history` — returns stored turns for frontend re-hydration | Done |
 | Session metadata API | `GET /chat/sessions` returns `SessionMetadata[]` with `session_id`, `created_at`, `documents[]` | Done |
-| Full session delete | `DELETE /chat/sessions/{session_id}` — registry + files + FAISS rebuild + history | Done |
+| Full session delete | `DELETE /chat/sessions/{session_id}` — registry + storage backend files + FAISS rebuild + history | Done |
 | API layer | FastAPI routers for `chat`, `documents`, `health`; Pydantic schemas; singleton dependency injection; lifespan startup/shutdown | Done |
 | CORS + static serving | `CORSMiddleware` with env-configurable origins; `SERVE_FRONTEND=true` guard for production static file mount | Done |
-| Unit tests | pytest tests covering all layers — config, exceptions, logging, model loader, ingestion, retrieval, chat manager, and all API endpoints | Done |
+| Unit tests | pytest tests covering all layers — including storage backends, session store, ingestion, retrieval, chat manager, and API endpoints | Done |
 
 ### Frontend
 
@@ -306,7 +311,7 @@ Key settings in `config/config.yaml`:
 | 4 | Container App (`rag-llmops-backend`) — user-assigned managed identity for ACR auth, secrets, env vars, FAISS volume mount at `/app/faiss_index` | Done |
 | 4 | Backend live health check and E2E verification | In progress |
 | 4 | Azure Static Web Apps frontend deployment + CORS wiring | Pending |
-| 5 | Cloud storage abstraction — migrate session data (uploads, history, registry) to Azure Blob Storage | Pending |
+| 5 | Cloud storage abstraction — session data (`uploads`, `history`, `registry`) now goes through `StorageBackend`, using Azure Blob Storage in production and local disk in development | Done |
 | 6 | Automated CD — `deploy` job in CI to update Container App on every `main` push | Pending |
 
 ---
@@ -326,14 +331,15 @@ Key settings in `config/config.yaml`:
 │       ├── chat.py          # ChatRequest, ChatResponse, SessionMetadata, SessionListResponse, HistoryResponse
 │       └── document.py      # UploadResponse
 ├── conversation/
-│   ├── chat_manager.py      # ChatManager: sessions, JSONL persistence, history load/clear
+│   ├── chat_manager.py      # ChatManager: sessions, storage-backed history persistence, history load/clear
 │   └── prompt_builder.py    # RAG and condense prompts
 ├── ingestion/
-│   ├── data_ingestion.py    # Load, chunk, archive files; injects session_id into chunk metadata
+│   ├── data_ingestion.py    # Load, chunk, temp-file parse flow; injects session_id into chunk metadata
 │   ├── faiss_manager.py     # FAISS index lifecycle (create, load, add, clear)
 │   └── retriever.py         # Similarity / MMR / threshold retrieval with session_id filter
 ├── core/
-│   ├── session_store.py     # SessionRegistry — JSON-backed session metadata store
+│   ├── storage.py           # StorageBackend protocol + local / Azure Blob implementations
+│   ├── session_store.py     # SessionRegistry — storage-backed session metadata store
 │   ├── config.py            # YAML config loader
 │   ├── logging_config.py    # structlog setup
 │   └── exceptions.py        # RagAssistantException
@@ -343,9 +349,9 @@ Key settings in `config/config.yaml`:
 ├── config/
 │   └── config.yaml
 ├── data/
-│   ├── uploads/             # Archived files per session (data/uploads/<session_id>/)
-│   ├── history/             # JSONL conversation history per session
-│   └── session_registry.json
+│   ├── uploads/             # LocalStorageBackend uploads root (local development)
+│   ├── history/             # LocalStorageBackend JSONL history root (local development)
+│   └── session_registry.json # LocalStorageBackend registry file (local development)
 ├── frontend/
 │   ├── src/
 │   │   ├── api/client.ts    # Typed fetch wrapper for all backend endpoints
