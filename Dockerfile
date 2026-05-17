@@ -56,8 +56,9 @@ RUN uv sync --frozen --no-cache --no-group dev
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Pre-download HuggingFace embedding model at build time to eliminate cold-start delay.
-# One-liner avoids the Docker parse error caused by 'import'/'from' at line starts.
-# HF_TOKEN is injected via build secret — never baked into an image layer.
+# One-liner avoids Docker parse error: multi-line python -c causes 'import' to be
+# misread as a Dockerfile instruction. HF_HOME set inline as ENV HF_HOME comes later.
+# HF_TOKEN injected via build secret — never baked into an image layer.
 RUN --mount=type=secret,id=HF_TOKEN \
     python -c "import os; os.environ['HF_HOME']='/app/.cache/huggingface'; hf_token=open('/run/secrets/HF_TOKEN').read().strip(); from huggingface_hub import snapshot_download; snapshot_download(repo_id='google/embeddinggemma-300m', token=hf_token, ignore_patterns=['*.msgpack','*.h5','rust_model.ot']); print('Model downloaded successfully')"
 
