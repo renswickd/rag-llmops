@@ -55,6 +55,23 @@ RUN uv sync --frozen --no-cache --no-group dev
 # resolve to the venv — not the bare system Python that has no packages.
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Temp fix to download the embedding model into the image
+# This is a workaround to avoid the model being downloaded on every cold start
+# This is not a permanent fix and should be removed when the model is baked into the image
+RUN --mount=type=secret,id=HF_TOKEN \
+    python -c "
+import os
+os.environ['HF_HOME'] = '/app/.cache/huggingface'
+os.environ['HF_TOKEN'] = open('/run/secrets/HF_TOKEN').read().strip()
+from huggingface_hub import snapshot_download
+snapshot_download(
+    repo_id='google/embeddinggemma-300m',
+    token=os.environ['HF_TOKEN'],
+    ignore_patterns=['*.msgpack', '*.h5', 'rust_model.ot'],
+)
+print('Model downloaded successfully')
+"
+
 # Copy application code.
 # Order matters for caching: files that change frequently go last.
 COPY config/ config/
