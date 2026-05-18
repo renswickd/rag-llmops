@@ -81,6 +81,10 @@ EXPOSE 8000
 
 # Set HuggingFace cache directory to a predictable path inside the container.
 ENV HF_HOME=/app/.cache/huggingface
+# Prevent runtime from contacting HuggingFace Hub — all model files are baked at build time.
+# If the hub is contacted at runtime, missing or newer files (e.g. chat_template.jinja added
+# after the build) cause a 401 on gated repos because HF_TOKEN is not available at runtime.
+ENV HF_HUB_OFFLINE=1
 
 # run.py calls uvicorn.run() via Python API — no console-script PATH dependency.
 CMD ["python", "run.py"]
