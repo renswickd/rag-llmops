@@ -3,6 +3,7 @@
         "rewrite": "/index.html",
         "exclude": [
             "/assets/*",
+            "/api/*",
             "/*.{png,jpg,gif,ico,svg,css,js,json,woff,woff2}"
         ]
     },
