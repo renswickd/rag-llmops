@@ -1,46 +1,63 @@
 # RAG LLMOps
 
-A self-contained Retrieval-Augmented Generation (RAG) system built as a learning project to explore LLMOps practices. Upload documents, ask questions, and get grounded answers with source citations — all backed by a production-style FastAPI backend.
+A full-stack Retrieval-Augmented Generation (RAG) system built as a learning project to explore LLMOps practices end-to-end — from local development through containerisation to a production Azure deployment. Upload documents, ask questions, and get grounded answers with source citations.
+
+[![CI](https://github.com/renswickd/rag-llmops/actions/workflows/ci.yaml/badge.svg)](https://github.com/renswickd/rag-llmops/actions/workflows/ci.yaml)
+[![SWA Deploy](https://github.com/renswickd/rag-llmops/actions/workflows/azure-static-web-apps-black-forest-00e252400.yml/badge.svg)](https://github.com/renswickd/rag-llmops/actions/workflows/azure-static-web-apps-black-forest-00e252400.yml)
 
 ---
 
-## Objective
+## Live Deployment
 
-The goal of this project is to build and deploy a full-stack RAG application that demonstrates:
+| Component | URL |
+|-----------|-----|
+| Frontend (Azure Static Web Apps) | https://black-forest-00e252400.7.azurestaticapps.net |
+| Backend API (Azure Container Apps) | https://rag-llmops-backend.mangowave-3ff37a09.australiaeast.azurecontainerapps.io/api/v1/health |
+| Interactive API docs (local) | http://localhost:8000/docs |
+
+---
+
+## What This Project Demonstrates
 
 - Clean backend architecture with FastAPI and dependency injection
 - A real document ingestion pipeline (PDF/TXT/MD → chunks → embeddings → FAISS)
-- Multi-turn conversational retrieval with question condensing
-- Per-session document isolation — each session only retrieves from its own documents
+- Multi-turn conversational retrieval with standalone question condensing
+- Per-session document isolation — each session retrieves only from its own documents
 - Persistent conversation history that survives backend restarts
-- Cloud storage abstraction for session data across local disk and Azure Blob Storage
-- A modern React frontend with dark/light mode and session management
-- Containerised deployment on Azure Container Apps
-- LLMOps practices: structured logging, configuration management, and automated testing
-
-This is a learning project intended to be shared with others for testing.
+- A `StorageBackend` abstraction that switches between local disk and Azure Blob Storage
+- A modern React frontend with dark/light mode, session management, and history re-hydration
+- Containerised deployment on Azure Container Apps (scale-to-zero, managed identity, Azure Files mount)
+- Frontend deployment on Azure Static Web Apps with automatic GitHub Actions CI/CD
+- LLMOps practices: structured logging (structlog), configuration management (YAML + env), and automated testing
 
 ---
 
 ## Architecture
 
 ```
-frontend/          React + Vite + TypeScript + TailwindCSS + shadcn/ui
-api/               FastAPI application
-  routers/         chat, documents, health endpoints
-  schemas/         Pydantic request/response models
-  dependencies.py  Service singleton initialisation
-  main.py          App entry point with lifespan management
-conversation/      Multi-turn chat manager with storage-backed history persistence
-ingestion/         Document loading, chunking, FAISS vector store, retriever
-core/              Config loader, structured logging, storage abstraction, custom exceptions, session registry
-utils/             LLM and embeddings model loader, session ID generation
-config/            config.yaml — all tunable parameters
-data/
-  uploads/         LocalStorageBackend uploads root (used when storage.backend=local)
-  history/         LocalStorageBackend history root (used when storage.backend=local)
-  session_registry.json  LocalStorageBackend registry file (used when storage.backend=local)
-tests/             pytest unit test suite
+Browser
+  └── Azure Static Web Apps (React + Vite + TypeScript)
+        │  HTTPS — CORS allowed for SWA origin
+        ▼
+  Azure Container Apps (FastAPI — Consumption plan, scale-to-zero)
+        │  secretref: for GROQ_API_KEY, HF_TOKEN, storage connection string
+        │  Azure Files mount at /app/faiss_index (FAISS index + HF model cache)
+        ├── Azure Blob Storage
+        │     ├── uploads/      archived raw files per session
+        │     ├── history/      per-session JSONL conversation turns
+        │     └── registry/     session_registry.json
+        └── Application Insights + Log Analytics
+              structured logs, request traces, performance dashboards
+```
+
+```
+GitHub Repo (push to main)
+  ├── GitHub Actions ci.yaml
+  │     ├── test-backend  (pytest)
+  │     ├── test-frontend (npm run build)
+  │     └── build-push    → ACR ragllmopsacr.azurecr.io  [linux/amd64 + linux/arm64]
+  └── GitHub Actions azure-static-web-apps-*.yml
+        └── Build And Deploy → Azure Static Web Apps
 ```
 
 ---
@@ -48,41 +65,47 @@ tests/             pytest unit test suite
 ## Tech Stack
 
 ### Backend
+
 | Component | Technology |
 |-----------|-----------|
 | API framework | FastAPI + Uvicorn |
-| LLM | Groq (`openai/gpt-oss-20b`) via LangChain |
+| LLM | Groq (`openai/gpt-oss-20b`) via LangChain LCEL |
 | Embeddings | HuggingFace `google/embeddinggemma-300m` |
-| Vector store | FAISS (local filesystem; Azure Files mount in production) |
-| Session data storage | `StorageBackend` abstraction: local filesystem or Azure Blob Storage |
+| Vector store | FAISS (local filesystem or Azure Files mount) |
+| Session storage | `StorageBackend` abstraction: `LocalStorageBackend` or `AzureBlobStorageBackend` |
 | Document parsing | PyMuPDF, PyPDF |
 | Chunking | LangChain `RecursiveCharacterTextSplitter` |
 | Logging | structlog (structured JSON) |
 | Config | YAML + python-dotenv |
+| Dependency management | uv + `uv.lock` |
 
 ### Frontend
+
 | Component | Technology |
 |-----------|-----------|
-| UI library | React 19 + Vite 8 + TypeScript 6 |
+| UI library | React 19 + Vite + TypeScript |
 | Styling | TailwindCSS 4 (CSS-first) + shadcn/ui |
 | Components | Radix UI primitives via shadcn/ui |
-| State | Zustand 5 with persist middleware |
+| State | Zustand with persist middleware |
 | Markdown rendering | react-markdown + remark-gfm |
 | File upload | react-dropzone |
 | Icons | lucide-react |
 
 ### Deployment
-| Component | Technology |
-|-----------|-----------|
-| Containerisation | Docker (multi-stage build, linux/amd64 + linux/arm64) |
-| Local orchestration | docker-compose |
-| Image registry | Azure Container Registry (`ragllmopsacr.azurecr.io`) |
-| CI | GitHub Actions (test on every push; build + push to ACR on `main`) |
-| Backend hosting | Azure Container Apps (`rag-llmops-backend`, Consumption plan) |
-| Session data persistence | Azure Blob Storage containers: `uploads`, `history`, `registry` |
-| FAISS persistence | Azure Files share (`faiss-index`) mounted at `/app/faiss_index` |
-| Observability | Log Analytics + Application Insights (`rag-llmops-insights`) |
-| Frontend hosting (pending) | Azure Static Web Apps |
+
+| Component | Technology | Status |
+|-----------|-----------|--------|
+| Container image | Docker multi-stage build (`linux/amd64` + `linux/arm64`) | Done |
+| Local orchestration | docker-compose with named volumes and health check | Done |
+| Image registry | Azure Container Registry (`ragllmopsacr.azurecr.io`, Standard) | Done |
+| CI | GitHub Actions — pytest + frontend build on every push; multi-platform image pushed to ACR on `main` | Done |
+| Backend hosting | Azure Container Apps (`rag-llmops-backend`, Consumption plan, scale-to-zero) | Done |
+| Session data | Azure Blob Storage containers: `uploads`, `history`, `registry` | Done |
+| FAISS persistence | Azure Files share (`faiss-index`) mounted at `/app/faiss_index` | Done |
+| HF model cache | `HF_HOME=/app/faiss_index/.hf_cache` — persisted on the same Azure Files mount | Done |
+| Observability | Log Analytics workspace + Application Insights (`rag-llmops-insights`) | Done |
+| Frontend hosting | Azure Static Web Apps — auto-deploys on push to `main` via built-in GitHub Actions | Done |
+| Automated backend CD | `deploy` job in CI to update ACA image on every `main` push | Pending (Phase 6) |
 
 ---
 
@@ -93,13 +116,11 @@ All endpoints are prefixed `/api/v1/`.
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check — returns app name, version, environment |
-| `POST` | `/documents/upload` | Upload a `.pdf`, `.txt`, or `.md` file; returns `session_id`, `file_name`, and `chunks_created` |
-| `POST` | `/chat` | Send a question with a `session_id`; returns answer, sources, and conversation metadata |
+| `POST` | `/documents/upload` | Upload a `.pdf`, `.txt`, or `.md` file; returns `session_id`, `file_name`, `chunks_created` |
+| `POST` | `/chat` | Send a question with `session_id`; returns answer, sources, conversation metadata |
 | `GET` | `/chat/sessions` | List all sessions with full metadata (`session_id`, `created_at`, `documents[]`) |
-| `DELETE` | `/chat/sessions/{session_id}` | Fully delete a session: registry, uploaded files, FAISS entries, and chat history |
-| `GET` | `/chat/sessions/{session_id}/history` | Return stored conversation history for re-hydration after a page refresh |
-
-Interactive docs available at `http://localhost:8000/docs` when running locally.
+| `DELETE` | `/chat/sessions/{session_id}` | Full teardown: registry + uploaded files + FAISS rebuild + chat history |
+| `GET` | `/chat/sessions/{session_id}/history` | Return stored conversation turns for frontend re-hydration |
 
 ---
 
@@ -112,23 +133,23 @@ session_id format:  upload_YYYYMMDD_HHMMSS_<8hex>
 e.g.                upload_20260418_143022_a3f9c1b7
 ```
 
-Sessions are tracked in a **session registry** written at upload time — not at first chat — so `GET /chat/sessions` always reflects all uploaded documents immediately. In local mode this lives at `data/session_registry.json`; in production it is stored as the `session_registry.json` blob in the `registry` container.
+Sessions are tracked in a **session registry** written at upload time — not at first chat — so `GET /chat/sessions` always reflects all uploaded documents immediately. In local mode the registry lives at `data/session_registry.json`; in production it is the `session_registry.json` blob in the `registry` Blob container.
 
 ### Document isolation
 
-Each uploaded document's chunks are tagged with their `session_id` in FAISS metadata. The retriever filters by `session_id` at query time, so Session A can never return chunks from Session B's documents.
+Each uploaded document's chunks are tagged with their `session_id` in FAISS metadata. The retriever filters by `session_id` at query time — Session A can never return chunks from Session B's documents, even though a single global FAISS index is shared.
 
 ### History persistence
 
-Conversation turns are appended to the configured storage backend after each chat response. In local mode this is `data/history/<session_id>.jsonl`; in production it is the `<session_id>.jsonl` blob in the `history` container. On backend startup, persisted history is loaded back into memory using the session IDs from the registry.
+Conversation turns are appended to the configured storage backend after each chat response. In local mode this is `data/history/<session_id>.jsonl`; in production it is the `<session_id>.jsonl` blob in the `history` Blob container. On backend startup, persisted history is loaded back into memory from registry-known session IDs.
 
 ### Full delete
 
-`DELETE /chat/sessions/{session_id}` performs a complete teardown:
+`DELETE /chat/sessions/{session_id}` performs a complete teardown in order:
 1. Remove from the session registry
 2. Delete archived files from the configured storage backend
 3. Rebuild the FAISS index from the remaining sessions
-4. Delete persisted chat history and clear the in-memory chat history
+4. Delete persisted chat history and clear the in-memory history
 
 ---
 
@@ -136,22 +157,22 @@ Conversation turns are appended to the configured storage backend after each cha
 
 ```
 Upload file
-    └── Generate session_id (upload_YYYYMMDD_HHMMSS_<8hex>)
-    └── Archive to configured storage backend
-    └── Write session metadata to configured registry backend
-    └── Parse (PDF / TXT / MD)
-    └── Chunk (RecursiveCharacterTextSplitter, 1000 chars / 150 overlap)
-    └── Tag each chunk with session_id in metadata
-    └── Embed (HuggingFace google/embeddinggemma-300m)
-    └── Add to FAISS index (faiss_index/)
+  └── Generate session_id
+  └── Archive to configured storage backend
+  └── Write session metadata to registry
+  └── Parse (PDF / TXT / MD)
+  └── Chunk (RecursiveCharacterTextSplitter, 1000 chars / 150 overlap)
+  └── Tag each chunk with session_id in metadata
+  └── Embed (HuggingFace google/embeddinggemma-300m)
+  └── Add to FAISS index
 
 Ask question
-    └── Condense follow-up into standalone query (Groq LLM)
-    └── Retrieve top-k documents filtered by session_id (similarity / MMR / score-threshold)
-    └── Format context with source citations
-    └── Generate grounded answer (Groq LLM)
-    └── Append human + AI turn to configured history backend
-    └── Return answer + sources + history length
+  └── Condense follow-up into standalone query (Groq LLM + last N turns)
+  └── Retrieve top-k chunks filtered by session_id (similarity / MMR / score-threshold)
+  └── Format context with source citations
+  └── Generate grounded answer (Groq LLM)
+  └── Append human + AI turn to configured history backend
+  └── Return answer + sources + history length
 ```
 
 ---
@@ -169,10 +190,10 @@ Ask question
 ### Install
 
 ```bash
-git clone <repo-url>
-cd rag-llmops-2
+git clone https://github.com/renswickd/rag-llmops.git
+cd rag-llmops
 
-# Backend — uv creates .venv and installs all dependencies from uv.lock
+# Backend — uv creates .venv and installs all deps from uv.lock
 uv sync
 
 # Frontend
@@ -183,7 +204,7 @@ cd frontend && npm install && cd ..
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in GROQ_API_KEY and HF_TOKEN
+# Fill in GROQ_API_KEY and HF_TOKEN
 ```
 
 `.env.example`:
@@ -195,21 +216,21 @@ CORS_ORIGINS=http://localhost:5173
 SERVE_FRONTEND=true
 ```
 
-All other parameters (model names, chunk size, retrieval settings) are in `config/config.yaml`.
+All other parameters (model names, chunk size, retrieval settings) live in `config/config.yaml`.
 
 ### Run — development (two terminals)
 
 ```bash
 # Terminal 1 — FastAPI backend
 python run.py
-# API available at http://localhost:8000
-# Interactive docs at http://localhost:8000/docs
+# API:  http://localhost:8000
+# Docs: http://localhost:8000/docs
 ```
 
 ```bash
 # Terminal 2 — React frontend (Vite dev server)
 cd frontend && npm run dev
-# UI available at http://localhost:5173
+# UI: http://localhost:5173
 ```
 
 The Vite dev server proxies `/api` requests to `localhost:8000`, so CORS is not an issue in development.
@@ -217,31 +238,32 @@ The Vite dev server proxies `/api` requests to `localhost:8000`, so CORS is not 
 ### Run — Docker (single container)
 
 ```bash
-# Build image (first time ~5–8 min; rebuilds after code changes are fast)
 docker build -t rag-llmops:local .
-
-# Run — secrets come from .env, never from the command line
 docker run --rm -p 8000:8000 --env-file .env rag-llmops:local
+# Frontend + API served together at http://localhost:8000
 ```
 
-The frontend and API are both served from port 8000 (`SERVE_FRONTEND=true` in `.env`). Open `http://localhost:8000`.
+On Apple Silicon add `--platform linux/amd64` to `docker run` when using a locally built image.
 
 ### Run — docker-compose (with persistent volumes)
 
 ```bash
 docker compose up --build   # first run
-docker compose up           # subsequent runs (no rebuild needed)
-docker compose down         # stop, keep volumes
+docker compose up           # subsequent runs
+docker compose down         # stop, keep data volumes
 docker compose down -v      # stop and delete all data volumes
 ```
 
 ### Test
 
 ```bash
-# Backend
-pytest tests/ -v
+# Backend unit tests
+uv run pytest tests/ -v
 
-# Frontend build check
+# Single module
+uv run pytest tests/test_chat.py -v
+
+# Frontend type-check + build
 cd frontend && npm run build
 ```
 
@@ -256,63 +278,55 @@ Key settings in `config/config.yaml`:
 | `llm.groq` | `model_name` | `openai/gpt-oss-20b` | Groq model |
 | `llm.groq` | `max_history_turns` | `10` | Sliding window for conversation history |
 | `embedding_model` | `model_name` | `google/embeddinggemma-300m` | HuggingFace embedding model |
-| `data` | `data_dir` | `data` | Root directory for uploads, history, and registry |
-| `data` | `history_dir` | `data/history` | Directory for per-session JSONL history files |
-| `data` | `uploads_subdir` | `uploads` | Sub-directory under `data_dir` for archived files |
-| `storage` | `backend` | `local` | Storage backend selector: `local` or `azure_blob` |
+| `data` | `data_dir` | `data` | Root for uploads, history, and registry (local mode) |
+| `storage` | `backend` | `local` | `local` or `azure_blob` |
 | `data_ingestion` | `chunk_size` | `1000` | Characters per chunk |
 | `data_ingestion` | `chunk_overlap` | `150` | Overlap between chunks |
 | `retriever` | `default_search_type` | `similarity` | `similarity`, `mmr`, or `similarity_score_threshold` |
-| `retriever` | `default_top_k` | `4` | Documents retrieved per query |
+| `retriever` | `default_top_k` | `4` | Chunks retrieved per query |
 
 ---
 
-### Backend
+## Project Phases
+
+| Phase | Name | Description | Status |
+|-------|------|-------------|--------|
+| 1 | Containerise | Docker multi-stage build; frontend served via `SERVE_FRONTEND=true` | Done |
+| 2 | Local Orchestration | docker-compose with named volumes, health check, full E2E local validation | Done |
+| 3 | CI Pipeline | GitHub Actions: pytest + frontend build on every push; multi-platform image pushed to ACR on `main` | Done |
+| 4 | Azure Infrastructure | Resource group, ACR, Storage Account, Blob containers, Azure Files, App Insights, ACA environment + app | Done |
+| 5 | Cloud Storage Abstraction | `StorageBackend` protocol; uploads, history, registry all go through Azure Blob Storage in production | Done |
+| 6 | Automated Backend CD | `deploy` job in CI to update ACA image on every `main` push | Pending |
+| 7 | Frontend CI/CD | SWA auto-deploys React build via built-in GitHub Actions integration; CORS wired to ACA backend | Done |
+| 8 | Observability & Hardening | Application Insights SDK, availability test on `/health`, rate limiting, security review | Pending |
+
+### Backend feature status
 
 | Component | Details | Status |
 |-----------|---------|--------|
 | Core infrastructure | YAML config loader, structlog JSON logging, `RagAssistantException` with traceback capture | Done |
-| Model loader | Groq `ChatGroq` LLM + HuggingFace `HuggingFaceEmbeddings` initialisation with config-driven parameters | Done |
-| Document ingestion | Load PDF / TXT / MD via LangChain loaders, archive to the configured storage backend, chunk with `RecursiveCharacterTextSplitter` | Done |
-| FAISS vector store | Create, load, update, and clear FAISS index; persist to disk; per-session chunk metadata | Done |
-| Storage abstraction | `core/storage.py` — `StorageBackend` protocol with `LocalStorageBackend` and `AzureBlobStorageBackend`; factory-selected at startup | Done |
-| Session registry | `core/session_store.py` — registry written via the storage backend at upload time; returned by `list_sessions`; cleaned up on delete | Done |
-| Retrieval pipeline | Three search modes: `similarity`, `mmr`, `similarity_score_threshold`; per-session filtering via chunk metadata | Done |
-| Conversation chain | `ChatManager` with per-session `InMemoryChatMessageHistory`, sliding window, standalone question condensing via LangChain LCEL | Done |
-| History persistence | Turns appended via the storage backend; loaded on startup from registry-known session IDs; deleted with session | Done |
-| History endpoint | `GET /chat/sessions/{session_id}/history` — returns stored turns for frontend re-hydration | Done |
-| Session metadata API | `GET /chat/sessions` returns `SessionMetadata[]` with `session_id`, `created_at`, `documents[]` | Done |
-| Full session delete | `DELETE /chat/sessions/{session_id}` — registry + storage backend files + FAISS rebuild + history | Done |
-| API layer | FastAPI routers for `chat`, `documents`, `health`; Pydantic schemas; singleton dependency injection; lifespan startup/shutdown | Done |
-| CORS + static serving | `CORSMiddleware` with env-configurable origins; `SERVE_FRONTEND=true` guard for production static file mount | Done |
-| Unit tests | pytest tests covering all layers — including storage backends, session store, ingestion, retrieval, chat manager, and API endpoints | Done |
+| Model loader | Groq `ChatGroq` LLM + HuggingFace `HuggingFaceEmbeddings` — config-driven, loaded once | Done |
+| Document ingestion | Load PDF/TXT/MD, archive to storage backend, chunk with `RecursiveCharacterTextSplitter` | Done |
+| FAISS vector store | Create, load, update, rebuild; persist to disk; per-session chunk metadata | Done |
+| Storage abstraction | `StorageBackend` protocol with `LocalStorageBackend` and `AzureBlobStorageBackend` | Done |
+| Session registry | Written via storage backend at upload time; used by `list_sessions` and startup hydration | Done |
+| Retrieval pipeline | Three search modes; per-session filtering via FAISS metadata | Done |
+| Conversation chain | `ChatManager` with per-session message history, sliding window, LCEL condense + answer chains | Done |
+| History persistence | Turns appended to storage backend; loaded on startup; deleted with session | Done |
+| Full session delete | Registry + storage files + FAISS rebuild + in-memory history | Done |
+| API layer | FastAPI routers (`chat`, `documents`, `health`); Pydantic schemas; singleton DI; lifespan | Done |
+| CORS + static serving | `CORSMiddleware` with env-configurable origins; `SERVE_FRONTEND` guard | Done |
+| Unit tests | pytest covering storage backends, session store, ingestion, retrieval, chat manager, and API | Done |
 
-### Frontend
+### Frontend feature status
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 2 | Frontend scaffold (React 19 + Vite 8 + TypeScript 6 + Tailwind v4 + shadcn/ui + Zustand) | Done |
-| 3 | Core UI components (two-panel chat, drag-and-drop upload, dark/light mode, markdown rendering, source citations) | Done |
-| 3+ | Session management with full `SessionMetadata` — sidebar shows document names and dates; header dropdown uses document names; Zustand store updated to `SessionMetadata[]` | Done |
-| 3+ | History re-hydration on page refresh — `switchSession` fetches backend history if no messages are cached; loading spinner shown during fetch | Done |
-| 4 | Frontend testing (Vitest unit + Playwright E2E) | Pending |
-
-### Deployment
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 3 | Docker multi-stage build (Node → Python, uv venv, CPU-only torch) | Done |
-| 3 | docker-compose with named volumes, health check, env-file secrets | Done |
-| 3 | Azure Container Registry (`ragllmopsacr.azurecr.io`, Standard tier) | Done |
-| 3 | GitHub Actions CI — pytest + frontend build on every push; multi-platform image pushed to ACR on `main` (`provenance: false` to avoid SLSA attestation issues) | Done |
-| 4 | Azure Storage Account (`ragllmopsstorage`) — Azure Files share `faiss-index` + Blob containers | Done |
-| 4 | Log Analytics workspace + Application Insights for structured log forwarding | Done |
-| 4 | Container Apps environment (`rag-llmops-env`) with Azure Files volume mount (`faiss-storage`) | Done |
-| 4 | Container App (`rag-llmops-backend`) — user-assigned managed identity for ACR auth, secrets, env vars, FAISS volume mount at `/app/faiss_index` | Done |
-| 4 | Backend live health check and E2E verification | In progress |
-| 4 | Azure Static Web Apps frontend deployment + CORS wiring | Pending |
-| 5 | Cloud storage abstraction — session data (`uploads`, `history`, `registry`) now goes through `StorageBackend`, using Azure Blob Storage in production and local disk in development | Done |
-| 6 | Automated CD — `deploy` job in CI to update Container App on every `main` push | Pending |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Scaffold | React 19 + Vite + TypeScript + TailwindCSS 4 + shadcn/ui + Zustand | Done |
+| Core UI | Two-panel chat layout, drag-and-drop upload, dark/light mode, markdown rendering, source citations | Done |
+| Session management | Sidebar with document names and dates; header dropdown; `SessionMetadata[]` Zustand store | Done |
+| History re-hydration | On session switch or page refresh: fetches `GET /history` if messages not cached; loading spinner | Done |
+| Frontend tests | Vitest unit + Playwright E2E | Pending |
 
 ---
 
@@ -321,8 +335,8 @@ Key settings in `config/config.yaml`:
 ```
 .
 ├── api/
-│   ├── main.py              # FastAPI app + CORS + conditional static file serving
-│   ├── dependencies.py      # Service singleton initialisation (ChatManager, SessionRegistry, FaissManager)
+│   ├── main.py              # FastAPI app, CORS, conditional static file serving
+│   ├── dependencies.py      # Service singleton initialisation (startup order documented)
 │   ├── routers/
 │   │   ├── chat.py          # POST /chat, GET/DELETE /sessions, GET /sessions/{id}/history
 │   │   ├── documents.py     # POST /documents/upload
@@ -331,44 +345,58 @@ Key settings in `config/config.yaml`:
 │       ├── chat.py          # ChatRequest, ChatResponse, SessionMetadata, SessionListResponse, HistoryResponse
 │       └── document.py      # UploadResponse
 ├── conversation/
-│   ├── chat_manager.py      # ChatManager: sessions, storage-backed history persistence, history load/clear
+│   ├── chat_manager.py      # Per-session history, storage-backed persistence, sliding window, LCEL chains
 │   └── prompt_builder.py    # RAG and condense prompts
 ├── ingestion/
-│   ├── data_ingestion.py    # Load, chunk, temp-file parse flow; injects session_id into chunk metadata
-│   ├── faiss_manager.py     # FAISS index lifecycle (create, load, add, clear)
+│   ├── data_ingestion.py    # Load, chunk, inject session_id into chunk metadata
+│   ├── faiss_manager.py     # FAISS index lifecycle (create, load, add, rebuild)
 │   └── retriever.py         # Similarity / MMR / threshold retrieval with session_id filter
 ├── core/
-│   ├── storage.py           # StorageBackend protocol + local / Azure Blob implementations
-│   ├── session_store.py     # SessionRegistry — storage-backed session metadata store
+│   ├── storage.py           # StorageBackend protocol + Local and AzureBlob implementations
+│   ├── session_store.py     # SessionRegistry — storage-backed session metadata
 │   ├── config.py            # YAML config loader
 │   ├── logging_config.py    # structlog setup
 │   └── exceptions.py        # RagAssistantException
 ├── utils/
-│   ├── model_loader.py      # Groq LLM + HuggingFace embeddings
-│   └── file_handling.py     # Session ID generation (flat URL-safe format)
+│   ├── model_loader.py      # Groq LLM + HuggingFace embeddings (loaded once at startup)
+│   └── file_handling.py     # Session ID generation
 ├── config/
-│   └── config.yaml
-├── data/
-│   ├── uploads/             # LocalStorageBackend uploads root (local development)
-│   ├── history/             # LocalStorageBackend JSONL history root (local development)
-│   └── session_registry.json # LocalStorageBackend registry file (local development)
+│   └── config.yaml          # All tunable parameters
+├── data/                    # Local development data (git-ignored)
+│   ├── uploads/             # Archived raw files (LocalStorageBackend)
+│   ├── history/             # Per-session JSONL history (LocalStorageBackend)
+│   └── session_registry.json
 ├── frontend/
+│   ├── public/
+│   │   └── staticwebapp.config.json  # SWA routing (navigationFallback, security headers)
 │   ├── src/
 │   │   ├── api/client.ts    # Typed fetch wrapper for all backend endpoints
-│   │   ├── store/appStore.ts # Zustand store (SessionMetadata[], messages, hydration state, theme)
+│   │   ├── store/appStore.ts # Zustand store (sessions, messages, hydration state, theme)
 │   │   ├── types/index.ts   # TypeScript interfaces mirroring Pydantic schemas
 │   │   └── components/      # Layout, Header, Sidebar, ChatArea, MessageList,
 │   │                        #   ChatInput, DocumentUpload, SessionList, ThemeToggle
-│   ├── vite.config.ts       # Tailwind plugin + @/ alias + /api proxy
+│   ├── vite.config.ts       # TailwindCSS plugin + @/ alias + /api proxy to :8000
 │   └── package.json
 ├── .github/
 │   └── workflows/
-│       └── ci.yaml          # CI: test-backend (pytest) + test-frontend (build) on every push; build-push to ACR on main
+│       ├── ci.yaml                                          # test-backend, test-frontend, build-push to ACR
+│       └── azure-static-web-apps-black-forest-00e252400.yml # SWA auto-deploy on push to main
 ├── tests/                   # pytest unit tests
-├── Dockerfile               # Multi-stage build: Node (frontend) → Python (backend)
+├── docs/                    # Planning and test guides per phase
+├── Dockerfile               # Multi-stage: Node (frontend build) → Python (FastAPI + embedded dist)
 ├── docker-compose.yaml      # Local orchestration with named volumes and health check
 ├── run.py                   # Entry point (calls uvicorn.run() via Python API)
-├── pyproject.toml           # Dependencies + uv config (CPU torch index, dev group)
-├── uv.lock                  # Pinned lock file — regenerate with `uv lock` after pyproject changes
+├── pyproject.toml           # Dependencies + uv config (CPU-only torch, dev group)
+├── uv.lock                  # Pinned lock file
 └── .env.example
 ```
+
+---
+
+## Key Constraints
+
+- **CPU-only Torch** — `uv.lock` pins the CPU wheel for Linux. Do not add CUDA dependencies.
+- **Single FAISS index** — Per-session isolation is metadata filtering only, not separate indexes. Full delete requires an index rebuild.
+- **`uv sync --no-group dev`** in Docker — `pytest` is dev-only and absent from the production image.
+- **Vite build-time env vars** — `VITE_API_URL` must be injected as an `env:` block in the SWA GitHub Actions workflow step, not via Azure Portal App Settings. SWA App Settings are not forwarded to GitHub runners. See `docs/phase7_e2e_test_and_fix_guide.md` for details.
+- **TypeScript strict mode** — `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch` all enabled. `tsc -b` runs before bundling.
