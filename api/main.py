@@ -4,7 +4,7 @@ FastAPI application entry point.
 Start the server with:
     uvicorn api.main:app --reload
 
-Then open http://localhost:8000/docs for the interactive Swagger UI.
+Then open http://localhost:8000/docs for the interactive Swagger UI - Local development only.
 """
 import os
 from contextlib import asynccontextmanager
@@ -13,6 +13,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.limiter import limiter
 
 from api.dependencies import init_services
 from api.routers import health, documents, chat
@@ -50,6 +53,10 @@ app = FastAPI(
     version=config["app"]["version"],
     lifespan=lifespan,
 )
+
+# Apply rate limiting middleware to all routes
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

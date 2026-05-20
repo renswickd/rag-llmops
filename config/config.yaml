@@ -64,3 +64,8 @@ storage:
     history: history
     registry: registry
     registry_blob_name: session_registry.json
+
+rate_limiting:
+  enabled: true   # set to false to disable during load testing
+  chat_rpm: 10    # requests per minute per IP on POST /chat
+  upload_rpm: 5   # requests per minute per IP on POST /documents/upload
