@@ -1,7 +1,7 @@
 import tempfile
 
-from fastapi import APIRouter, Depends, HTTPException
-
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from api.limiter import limiter
 from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 from api.schemas.chat import ChatRequest, ChatResponse, HistoryResponse, SessionListResponse, SessionMetadata
 from conversation.chat_manager import ChatManager
@@ -19,9 +19,16 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 config = load_config()
 
+_chat_rpm = config.get("rate_limiting", {}).get("chat_rpm", 10)
+
 
 @router.post("", response_model=ChatResponse)
-def chat(request: ChatRequest, chat_mgr: ChatManager = Depends(get_chat_manager)):
+@limiter.limit(f"{_chat_rpm}/minute")
+def chat(
+    request: Request,
+    body: ChatRequest = Body(...),
+    chat_mgr: ChatManager = Depends(get_chat_manager),
+):
     """
     Send a question and get an answer grounded in your uploaded documents.
 
@@ -39,9 +46,9 @@ def chat(request: ChatRequest, chat_mgr: ChatManager = Depends(get_chat_manager)
 
     try:
         result = chat_mgr.chat(
-            question=request.question,
-            session_id=request.session_id,
-            top_k=request.top_k,
+            question=body.question,
+            session_id=body.session_id,
+            top_k=body.top_k,
         )
         return ChatResponse(**result)
     except RagAssistantException as e:
