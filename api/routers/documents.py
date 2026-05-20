@@ -2,8 +2,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from api.limiter import limiter
 from api.dependencies import get_faiss_manager, get_session_registry, get_storage
 from api.schemas.document import UploadResponse
 from ingestion.faiss_manager import FaissManager
@@ -18,12 +18,15 @@ from utils.file_handling import generate_session_id
 log = get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 config = load_config()
+_upload_rpm = config.get("rate_limiting", {}).get("upload_rpm", 5)
 
 ALLOWED_EXTENSIONS = set(config["data"]["allowed_extensions"])
 
 
 @router.post("/upload", response_model=UploadResponse)
+@limiter.limit(f"{_upload_rpm}/minute")
 async def upload_document(
+    request: Request,
     file: UploadFile = File(..., description="PDF, TXT, or MD file to ingest"),
     session_id: Optional[str] = Form(None, description="Reuse an existing session or leave blank to create a new one"),
     faiss_mgr: FaissManager = Depends(get_faiss_manager),
