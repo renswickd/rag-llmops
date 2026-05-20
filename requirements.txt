@@ -18,3 +18,5 @@ faiss-cpu
 pypdf
 python-multipart
 azure-storage-blob
+azure-monitor-opentelemetry
+slowapi
