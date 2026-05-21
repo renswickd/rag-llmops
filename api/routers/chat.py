@@ -1,6 +1,6 @@
 import tempfile
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Body, Response
 from api.limiter import limiter
 from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 from api.schemas.chat import ChatRequest, ChatResponse, HistoryResponse, SessionListResponse, SessionMetadata
@@ -26,6 +26,7 @@ _chat_rpm = config.get("rate_limiting", {}).get("chat_rpm", 10)
 @limiter.limit(f"{_chat_rpm}/minute")
 def chat(
     request: Request,
+    response: Response,
     body: ChatRequest = Body(...),
     chat_mgr: ChatManager = Depends(get_chat_manager),
 ):
