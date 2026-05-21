@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Body, Response
 from api.limiter import limiter
 from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 from api.schemas.chat import ChatRequest, ChatResponse, HistoryResponse, SessionListResponse, SessionMetadata
+from api.limiter import limiter
 from conversation.chat_manager import ChatManager
 from ingestion.faiss_manager import FaissManager
 from ingestion.data_ingestion import DataIngestion
