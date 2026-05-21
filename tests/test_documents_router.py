@@ -14,6 +14,9 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.limiter import limiter
 
 from core.exceptions import RagAssistantException
 
@@ -37,6 +40,12 @@ MOCK_CONFIG = {
 # ─────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    limiter._storage.reset()
+    yield
+
 
 @pytest.fixture(autouse=True)
 def patch_router_deps(tmp_path):
@@ -84,6 +93,8 @@ def client(mock_faiss, mock_registry, mock_storage):
     from api.dependencies import get_faiss_manager, get_session_registry, get_storage
 
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(router)
     app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
@@ -255,6 +266,8 @@ def test_returns_503_when_faiss_manager_is_none(mock_registry):
     from api.dependencies import get_faiss_manager, get_session_registry
 
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(router)
     app.dependency_overrides[get_faiss_manager] = lambda: None
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
@@ -273,6 +286,8 @@ def test_returns_503_when_registry_is_none(mock_faiss):
     from api.dependencies import get_faiss_manager, get_session_registry
 
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(router)
     app.dependency_overrides[get_faiss_manager] = lambda: mock_faiss
     app.dependency_overrides[get_session_registry] = lambda: None

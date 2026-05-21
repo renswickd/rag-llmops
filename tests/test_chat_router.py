@@ -17,6 +17,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.limiter import limiter
 
 from core.exceptions import RagAssistantException
 
@@ -51,6 +54,12 @@ FAKE_SESSION_METADATA = [
 # ─────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    limiter._storage.reset()
+    yield
+
 
 @pytest.fixture(autouse=True)
 def silence_router_log():
@@ -103,6 +112,8 @@ def client(mock_chat_mgr, mock_registry, mock_faiss_mgr, mock_storage):
     from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(router)
     app.dependency_overrides[get_chat_manager] = lambda: mock_chat_mgr
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
@@ -118,6 +129,8 @@ def no_service_client(mock_registry, mock_faiss_mgr, mock_storage):
     from api.dependencies import get_chat_manager, get_session_registry, get_faiss_manager, get_storage
 
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(router)
     app.dependency_overrides[get_chat_manager] = lambda: None
     app.dependency_overrides[get_session_registry] = lambda: mock_registry
