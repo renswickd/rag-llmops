@@ -2,8 +2,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Response
+from api.limiter import limiter
 from api.dependencies import get_faiss_manager, get_session_registry, get_storage
 from api.schemas.document import UploadResponse
 from ingestion.faiss_manager import FaissManager
@@ -18,12 +18,16 @@ from utils.file_handling import generate_session_id
 log = get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 config = load_config()
+_upload_rpm = config.get("rate_limiting", {}).get("upload_rpm", 5)
 
 ALLOWED_EXTENSIONS = set(config["data"]["allowed_extensions"])
 
 
 @router.post("/upload", response_model=UploadResponse)
+@limiter.limit(f"{_upload_rpm}/minute")
 async def upload_document(
+    request: Request,
+    response: Response,
     file: UploadFile = File(..., description="PDF, TXT, or MD file to ingest"),
     session_id: Optional[str] = Form(None, description="Reuse an existing session or leave blank to create a new one"),
     faiss_mgr: FaissManager = Depends(get_faiss_manager),
@@ -55,6 +59,16 @@ async def upload_document(
 
     sid = session_id or generate_session_id("upload")
     contents = await file.read()
+
+    MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"File too large ({len(contents) // (1024 * 1024)} MB). "
+                "Maximum allowed upload size is 10 MB."
+            ),
+        )
 
     # # Persist the uploaded file to the configured data directory.
     # # This archive survives process restarts and is the canonical copy for re-ingestion.

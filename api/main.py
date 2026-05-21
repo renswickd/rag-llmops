@@ -4,7 +4,7 @@ FastAPI application entry point.
 Start the server with:
     uvicorn api.main:app --reload
 
-Then open http://localhost:8000/docs for the interactive Swagger UI.
+Then open http://localhost:8000/docs for the interactive Swagger UI - Local development only.
 """
 import os
 from contextlib import asynccontextmanager
@@ -13,6 +13,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.limiter import limiter
 
 from api.dependencies import init_services
 from api.routers import health, documents, chat
@@ -22,6 +25,14 @@ from core.logging_config import setup_logging, get_logger
 config = load_config()
 setup_logging(config)
 log = get_logger(__name__)
+
+_AI_CONN_STR = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+if _AI_CONN_STR:
+    from azure.monitor.opentelemetry import configure_azure_monitor
+    configure_azure_monitor(connection_string=_AI_CONN_STR)
+    log.info("Application Insights SDK configured")
+else:
+    log.info("APPLICATIONINSIGHTS_CONNECTION_STRING not set — App Insights SDK skipped (local dev)")
 
 
 @asynccontextmanager
@@ -43,6 +54,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Apply rate limiting middleware to all routes
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
@@ -57,8 +72,7 @@ app.include_router(documents.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 
 # Serve built frontend from FastAPI only when SERVE_FRONTEND=true is set.
-# In development, Vite runs on its own port (5173). In production (single-container
-# deploy), set SERVE_FRONTEND=true and run `npm run build` first.
+# In development, Vite runs on its own port (5173). In production (single-container deploy), set SERVE_FRONTEND=true and run `npm run build` first.
 if os.getenv("SERVE_FRONTEND", "false").lower() == "true":
     _frontend_dist = Path("frontend/dist")
     if _frontend_dist.exists():

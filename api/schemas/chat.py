@@ -3,7 +3,7 @@ from typing import Optional
 
 # ---> Chat Request
 class ChatRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="The user's question")
+    question: str = Field(..., min_length=1, max_length=5000, description="The user's question")
     session_id: str = Field(..., description="Identifies the conversation session")
     top_k: Optional[int] = Field(None, ge=1, le=20, description="Number of documents to retrieve")
 

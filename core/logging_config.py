@@ -30,7 +30,8 @@ def setup_logging(config: dict | None = None) -> None:
     logging_cfg = config.get("logging", {})
     log_level = logging_cfg.get("level", "INFO").upper()
     log_dir = logging_cfg.get("log_dir", "logs")
-    file_enabled = logging_cfg.get("file_enabled", True)
+    # file_enabled = logging_cfg.get("file_enabled", True)
+    file_enabled = False if os.getenv("LOG_FILE_ENABLED", "true").lower() == "false" else True
     console_enabled = logging_cfg.get("console_enabled", True)
     file_name_prefix = logging_cfg.get("file_name_prefix", "app")
 
