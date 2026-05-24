@@ -10,7 +10,7 @@ A production-grade Retrieval-Augmented Generation system built with FastAPI, Rea
 ## Live Deployment
 
 | Component | URL |
-|---|---|
+|:---|:---|
 | Frontend (Azure Static Web Apps) | https://black-forest-00e252400.7.azurestaticapps.net |
 | Backend API (Azure Container Apps) | https://rag-llmops-backend.mangowave-3ff37a09.australiaeast.azurecontainerapps.io/api/v1/health |
 | Interactive API docs (local dev) | http://localhost:8000/docs |
@@ -18,58 +18,58 @@ A production-grade Retrieval-Augmented Generation system built with FastAPI, Rea
 ---
 
 ## System Architecture
+```mermaid
+flowchart TD
+    Browser(["Client Browser"])
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          Client (Browser)                               │
-└──────────────────────────────────┬──────────────────────────────────────┘
-                                   │ HTTPS
-                    ┌──────────────▼──────────────┐
-                    │   Azure Static Web Apps      │
-                    │   React 19 + Vite + TS       │
-                    │   Zustand (persisted state)  │
-                    └──────────────┬───────────────┘
-                                   │ HTTPS / CORS
-                    ┌──────────────▼───────────────┐
-                    │   Azure Container Apps       │
-                    │   FastAPI + Uvicorn          │
-                    │   Consumption plan           │
-                    │   Scale-to-zero              │
-                    │                              │
-                    │  ┌────────────────────────┐  │
-                    │  │  SlowAPI rate limiter  │  │
-                    │  │  (10 rpm /chat)        │  │
-                    │  │  (5 rpm /upload)       │  │
-                    │  └────────────────────────┘  │
-                    │                              │
-                    │  ┌─────────┐  ┌───────────┐  │
-                    │  │  FAISS  │  │  Groq LLM │  │
-                    │  │  Index  │  │  (LCEL)   │  │
-                    │  └────┬────┘  └───────────┘  │
-                    └───────┼──────────────────────┘
-                            │               │
-            ┌───────────────┼───────────────┼───────────┐
-            │               │               │           │
-┌───────────▼───────┐  ┌────▼─────────┐  ┌─▼─────────────────┐
-│  Azure Files       │  │ Azure Blob   │  │ App Insights +    │
-│  (FAISS index +   │  │ Storage      │  │ Log Analytics     │
-│   HF model cache) │  │ uploads/     │  │ OTel SDK traces   │
-└───────────────────┘  │ history/     │  │ structlog JSON    │
-                        │ registry/    │  │ availability test │
-                        └──────────────┘  └───────────────────┘
+    subgraph AZURE["Azure Cloud"]
+        SWA["Azure Static Web Apps<br/>React 19 + Vite + TypeScript<br/>Zustand persisted state"]
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         CI / CD Pipeline                                │
-│                                                                         │
-│  GitHub push to any branch                                              │
-│    └── test-backend  (pytest)                                           │
-│    └── test-frontend (tsc -b + vite build)                              │
-│                                                                         │
-│  GitHub push to main (after tests pass)                                 │
-│    └── build-push → ACR ragllmopsacr.azurecr.io                        │
-│          linux/amd64 + linux/arm64                                      │
-│    └── SWA workflow → Azure Static Web Apps (auto-deploy)               │
-└─────────────────────────────────────────────────────────────────────────┘
+        subgraph ACA["Azure Container Apps"]
+            API["FastAPI + Uvicorn"]
+            RL["SlowAPI Rate Limiter<br/>10 rpm chat<br/>5 rpm upload"]
+            FAISS_IDX["FAISS Index<br/>CPU<br/>session_id metadata filter"]
+            LCEL_CHAINS["LCEL Chains<br/>condense → retrieve → answer"]
+        end
+
+        AzFiles["Azure Files<br/>FAISS index + HF model cache"]
+        Blob["Azure Blob Storage<br/>uploads + history + registry"]
+        OBS["App Insights + Log Analytics<br/>OTel SDK + structlog JSON<br/>availability test"]
+        ACR["Azure Container Registry<br/>ragllmopsacr.azurecr.io"]
+    end
+
+    subgraph EXT["External Services"]
+        Groq["Groq API<br/>openai/gpt-oss-20b"]
+        HF["HuggingFace Hub<br/>google/embeddinggemma-300m"]
+    end
+
+    subgraph CICD["CI/CD - GitHub Actions"]
+        Tests["test-backend + test-frontend<br/>every branch push"]
+        Build["build-push to ACR<br/>linux/amd64 + linux/arm64<br/>main only"]
+        SWADep["SWA auto-deploy<br/>main only"]
+    end
+
+    Browser -- "HTTPS" --> SWA
+    SWA -- "HTTPS / CORS" --> API
+    API --> RL
+    API --> FAISS_IDX
+    API --> LCEL_CHAINS
+    LCEL_CHAINS -- "LLM call" --> Groq
+
+    AzFiles --> FAISS_IDX
+    FAISS_IDX --> AzFiles
+
+    Blob --> API
+    API --> Blob
+
+    API -- "OTel SDK traces" --> OBS
+    API -. "startup download" .-> HF
+
+    Tests -- "on push to main" --> Build
+    Tests -- "on push to main" --> SWADep
+    Build -- "push image" --> ACR
+    ACR -- "image pull" --> ACA
+    SWADep -- "deploy" --> SWA
 ```
 
 ---
@@ -149,7 +149,7 @@ The `Dockerfile` uses two stages: a Node stage that builds the React frontend in
 ### Backend
 
 | Component | Technology |
-|---|---|
+|:---|:---|
 | API framework | FastAPI + Uvicorn |
 | LLM | Groq (`openai/gpt-oss-20b`) via LangChain LCEL |
 | Embeddings | HuggingFace `google/embeddinggemma-300m` |
@@ -165,7 +165,7 @@ The `Dockerfile` uses two stages: a Node stage that builds the React frontend in
 ### Frontend
 
 | Component | Technology |
-|---|---|
+|:---|:---|
 | UI library | React 19 + Vite + TypeScript (strict mode) |
 | Styling | TailwindCSS 4 (CSS-first config) + shadcn/ui |
 | Components | Radix UI primitives |
@@ -176,7 +176,7 @@ The `Dockerfile` uses two stages: a Node stage that builds the React frontend in
 ### Infrastructure
 
 | Resource | Technology |
-|---|---|
+|:---|:---|
 | Container registry | Azure Container Registry (`ragllmopsacr.azurecr.io`, Standard tier) |
 | Backend hosting | Azure Container Apps — Consumption plan, scale-to-zero |
 | Session data | Azure Blob Storage (containers: `uploads`, `history`, `registry`) |
@@ -192,7 +192,7 @@ The `Dockerfile` uses two stages: a Node stage that builds the React frontend in
 All endpoints are prefixed `/api/v1/`.
 
 | Method | Endpoint | Rate limit | Description |
-|---|---|---|---|
+|:---:|:---|:---:|:---|
 | `GET` | `/health` | — | Returns app name, version, environment |
 | `POST` | `/documents/upload` | 5 rpm | Upload a `.pdf`, `.txt`, or `.md` file (max 10 MB); returns `session_id`, `file_name`, `chunks_created` |
 | `POST` | `/chat` | 10 rpm | Send a question with `session_id` (`max_length=5000`); returns answer, sources, conversation metadata |
@@ -312,7 +312,7 @@ cd frontend && npm run lint    # ESLint
 All tunable parameters live in `config/config.yaml`. Environment variables take precedence over config values for secrets and deployment-specific settings.
 
 | Section | Key | Default | Description |
-|---|---|---|---|
+|:---|:---|:---:|:---|
 | `llm.groq` | `model_name` | `openai/gpt-oss-20b` | Groq-hosted model |
 | `llm.groq` | `max_history_turns` | `10` | Sliding window for conversation context |
 | `embedding_model` | `model_name` | `google/embeddinggemma-300m` | HuggingFace embedding model |
@@ -386,7 +386,7 @@ All tunable parameters live in `config/config.yaml`. Environment variables take 
 ## Design Constraints and Trade-offs
 
 | Constraint | Rationale |
-|---|---|
+|:---|:---|
 | Single global FAISS index | Simpler operations; per-session isolation via metadata filter is sufficient at this scale |
 | CPU-only Torch | Azure Container Apps Consumption plan has no GPU; embedding model is small enough to run on CPU within acceptable latency |
 | `uv sync --no-group dev` in Docker | Keeps the production image lean — pytest and Streamlit are absent from the final layer |
