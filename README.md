@@ -31,22 +31,22 @@ A production-grade Retrieval-Augmented Generation system built with FastAPI, Rea
                     └──────────────┬───────────────┘
                                    │ HTTPS / CORS
                     ┌──────────────▼───────────────┐
-                    │   Azure Container Apps        │
-                    │   FastAPI + Uvicorn           │
-                    │   Consumption plan            │
+                    │   Azure Container Apps       │
+                    │   FastAPI + Uvicorn          │
+                    │   Consumption plan           │
                     │   Scale-to-zero              │
-                    │                               │
+                    │                              │
                     │  ┌────────────────────────┐  │
                     │  │  SlowAPI rate limiter  │  │
                     │  │  (10 rpm /chat)        │  │
                     │  │  (5 rpm /upload)       │  │
                     │  └────────────────────────┘  │
-                    │                               │
+                    │                              │
                     │  ┌─────────┐  ┌───────────┐  │
                     │  │  FAISS  │  │  Groq LLM │  │
                     │  │  Index  │  │  (LCEL)   │  │
                     │  └────┬────┘  └───────────┘  │
-                    └───────┼───────────────────────┘
+                    └───────┼──────────────────────┘
                             │               │
             ┌───────────────┼───────────────┼───────────┐
             │               │               │           │
@@ -56,7 +56,7 @@ A production-grade Retrieval-Augmented Generation system built with FastAPI, Rea
 │   HF model cache) │  │ uploads/     │  │ OTel SDK traces   │
 └───────────────────┘  │ history/     │  │ structlog JSON    │
                         │ registry/    │  │ availability test │
-                        └─────────────┘  └───────────────────┘
+                        └──────────────┘  └───────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         CI / CD Pipeline                                │
